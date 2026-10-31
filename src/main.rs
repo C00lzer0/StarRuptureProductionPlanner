@@ -517,6 +517,9 @@ async fn language_put(State(s): State<AppState>, Json(v): Json<Setting>) -> ApiR
 
 const IMAGE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/images");
 
+// Basisdaten (Items, Gebäude, Blueprints) für neu erstellte Datenbanken
+const SEED_SQL: &str = include_str!("../seed.sql");
+
 const SCHEMA: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -567,6 +570,7 @@ async fn main() {
     // Datei relativ zum Projektordner; per DATABASE_PATH überschreibbar
     let path = std::env::var("DATABASE_PATH")
         .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/productionplanner.db").into());
+    let is_new_db = !std::path::Path::new(&path).exists();
     let opts = SqliteConnectOptions::new()
         .filename(&path)
         .create_if_missing(true)
@@ -635,6 +639,17 @@ async fn main() {
             .execute(&pool)
             .await
             .expect("Migration unlocked");
+    }
+
+    // Neu erstellte Datenbank mit den Basisdaten befüllen
+    if is_new_db {
+        let mut tx = pool.begin().await.expect("Seed-Transaktion");
+        sqlx::raw_sql(SEED_SQL)
+            .execute(&mut *tx)
+            .await
+            .expect("Basisdaten konnten nicht importiert werden (Datenbankdatei löschen und neu starten)");
+        tx.commit().await.expect("Seed-Commit");
+        println!("Neue Datenbank mit Basisdaten aus seed.sql befüllt");
     }
 
     let api = Router::new()

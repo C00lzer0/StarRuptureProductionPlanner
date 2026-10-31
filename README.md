@@ -1,4 +1,4 @@
-# 🏭 Production Planner
+# 🏭 Production Planner for StarRupture
 
 [Deutsch](#deutsch) | [English](#english)
 
@@ -6,7 +6,7 @@
 
 ## Deutsch
 
-**Production Planner** ist ein lokales Web-Tool zur Planung von Produktionsketten (z. B. für Aufbau-/Fabrikspiele). Man hinterlegt Items, Gebäude und Blueprints (Rezepte); der Planer berechnet daraus den kompletten Produktionsbaum für ein Zielitem mit gewünschter Rate.
+**Production Planner** ist ein lokales Web-Tool zur Planung von Produktionsketten im Spiel **StarRupture**. Man hinterlegt Items, Gebäude und Blueprints (Rezepte); der Planer berechnet daraus den kompletten Produktionsbaum für ein Zielitem mit gewünschter Rate.
 
 ### Funktionen
 
@@ -14,7 +14,7 @@
 - **Pläne speichern**: Pläne benennen, speichern, laden und löschen.
 - **Blueprints, Gebäude, Items**: Verwaltung (anlegen, bearbeiten, löschen) inklusive Icons, Tier, Stromverbrauch, Temperatur, Baufläche, Kategorie und Freischalt-Status.
 - **Mehrsprachig**: Oberfläche auf Deutsch, Englisch, Spanisch und Französisch (i18next); die Sprache wird in der Datenbank gespeichert.
-- **Lokale Datenhaltung**: SQLite-Datenbank, die beim ersten Start automatisch angelegt und bei Bedarf migriert wird.
+- **Lokale Datenhaltung**: SQLite-Datenbank, die beim ersten Start automatisch angelegt, mit den Basisdaten aus `seed.sql` gefüllt und bei Bedarf migriert wird.
 
 ### Technik
 
@@ -47,6 +47,7 @@ Anschließend im Browser <http://127.0.0.1:3000> öffnen. Beenden mit `Strg+C`.
 src/main.rs         Backend (REST-API unter /api, Schema, Migrationen)
 static/             Frontend (index.html, app.js, locales.js, style.css)
 images/             Item- und Gebäude-Icons
+seed.sql            Basisdaten (Items, Gebäude, Blueprints) für neue Datenbanken
 productionplanner.db  SQLite-Datenbank
 ```
 
@@ -54,7 +55,7 @@ productionplanner.db  SQLite-Datenbank
 
 ## English
 
-**Production Planner** is a local web tool for planning production chains (e.g. for factory/automation games). You maintain items, buildings and blueprints (recipes); the planner then calculates the complete production tree for a target item at a desired rate.
+**Production Planner** is a local web tool for planning production chains in the game **StarRupture**. You maintain items, buildings and blueprints (recipes); the planner then calculates the complete production tree for a target item at a desired rate.
 
 ### Features
 
@@ -62,7 +63,7 @@ productionplanner.db  SQLite-Datenbank
 - **Saved plans**: name, save, load and delete plans.
 - **Blueprints, buildings, items**: manage (create, edit, delete) including icons, tier, power consumption, temperature, build area, category and unlock status.
 - **Multilingual**: UI in German, English, Spanish and French (i18next); the language is stored in the database.
-- **Local data storage**: SQLite database, created automatically on first start and migrated when necessary.
+- **Local data storage**: SQLite database, created automatically on first start, filled with the base data from `seed.sql` and migrated when necessary.
 
 ### Tech stack
 
@@ -95,5 +96,6 @@ Then open <http://127.0.0.1:3000> in your browser. Stop with `Ctrl+C`.
 src/main.rs         Backend (REST API under /api, schema, migrations)
 static/             Frontend (index.html, app.js, locales.js, style.css)
 images/             Item and building icons
+seed.sql            Base data (items, buildings, blueprints) for new databases
 productionplanner.db  SQLite database
 ```
