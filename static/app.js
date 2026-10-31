@@ -6,7 +6,10 @@ const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString(LANGUAGES.find((l)
 const isUrl = (s) => /^(https?:|data:image\/|\/)/.test(s || "");
 const BUILDING_CATEGORIES = ["extraction", "manufacturing", "processing", "transport", "defense", "power"];
 
-const db = { items: [], buildings: [], blueprints: [], plans: [] };
+const db = { items: [], buildings: [], blueprints: [], plans: [], manualPlans: [] };
+// Anmeldestatus (aus /api/me); ohne Login-Konfiguration ist der lokale Benutzer ein Admin
+const auth = { enabled: false, user: null };
+const isAdmin = () => !!auth.user?.is_admin;
 const view = { items: { filter: "", tier: "", sort: "tier-name" }, blueprints: { search: "", status: "" } };
 const plan = { id: null, name: "", target: null, rate: 60, choices: {} };
 
@@ -17,7 +20,7 @@ async function api(method, path, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) {
-    const msg = res.status === 409 ? t("err.conflict") : res.status === 400 ? t("err.invalid") : await res.text();
+    const msg = res.status === 409 ? t("err.conflict") : res.status === 400 ? t("err.invalid") : res.status === 401 ? t("err.loginRequired") : res.status === 403 ? t("err.forbidden") : await res.text();
     toast(msg || res.statusText);
     throw new Error(msg);
   }
@@ -35,8 +38,9 @@ function toast(msg, ok = false) {
 }
 
 async function loadAll() {
-  [db.items, db.buildings, db.blueprints, db.plans, imageFiles] = await Promise.all([
-    api("GET", "/items"), api("GET", "/buildings"), api("GET", "/blueprints"), api("GET", "/plans"), api("GET", "/images"),
+  const own = (path) => (auth.user ? api("GET", path) : []);
+  [db.items, db.buildings, db.blueprints, db.plans, imageFiles, db.manualPlans] = await Promise.all([
+    api("GET", "/items"), api("GET", "/buildings"), api("GET", "/blueprints"), own("/plans"), api("GET", "/images"), own("/manual-plans"),
   ]);
   imageIndex = new Map(imageFiles.map((f) => [f.replace(/\.[^.]+$/, "").toLowerCase(), f]));
   renderAll();
@@ -256,7 +260,7 @@ function renderNamed(kind) {
   const v = view.items;
   const sel = (val, cur) => (val === cur ? "selected" : "");
   const controls = isB ? "" : `<label>${t("item.filter")} <input id="item-filter" value="${esc(v.filter)}"></label><label>${t("item.tier")} <select id="item-tier"><option value="">${t("item.allTiers")}</option>${[...new Set(db.items.map((i) => i.tier))].sort((a, b) => a - b).map((tier) => `<option ${sel(String(tier), v.tier)}>${tier}</option>`).join("")}</select></label><label>${t("item.sort")} <select id="item-sort"><option value="tier-name" ${sel("tier-name", v.sort)}>${t("item.sortTierName")}</option><option value="name" ${sel("name", v.sort)}>${t("item.sortName")}</option><option value="tier" ${sel("tier", v.sort)}>${t("item.sortTier")}</option></select></label>`;
-  host.innerHTML = `<div class="toolbar sticky"><button id="add-${kind}" class="active">${t("common.add", { what })}</button>${controls}${kind === "items" && !db.items.length ? `<button id="seed">${t("named.seed")}</button>` : ""}</div>
+  host.innerHTML = `<div class="toolbar sticky">${isAdmin() ? `<button id="add-${kind}" class="active">${t("common.add", { what })}</button>` : ""}${controls}${kind === "items" && !db.items.length && isAdmin() ? `<button id="seed">${t("named.seed")}</button>` : ""}</div>
     <table><thead><tr><th>${t("common.icon")}</th><th>${t("common.name")}</th>${isB ? `<th>${t("named.category")}</th><th>${t("bp.status")}</th><th class="num">${t("named.powerShort")}</th><th class="num">${t("named.tempShort")}</th><th class="num">${t("named.areaShort")}</th>` : `<th class="num">${t("item.tier")}</th>`}<th></th></tr></thead><tbody id="${kind}-rows"></tbody></table>`;
   const renderRows = () => {
     let list = [...db[kind]];
@@ -268,10 +272,10 @@ function renderNamed(kind) {
       list = list.filter((n) => (!filter || n.name.toLocaleLowerCase().includes(filter)) && (!tier || String(n.tier) === tier));
       list.sort((a, b) => sort === "name" ? a.name.localeCompare(b.name) : sort === "tier" ? a.tier - b.tier : a.tier - b.tier || a.name.localeCompare(b.name));
     }
-    $("#"+kind+"-rows").innerHTML = list.map((n) => `<tr${isB ? ` class="${n.unlocked ? "bp-unlocked" : "bp-locked"}"` : ""}><td>${iconHtml(n.icon, n.name)}</td><td>${esc(n.name)}</td>${isB ? `<td>${n.category ? esc(t("category." + n.category)) : "–"}</td><td class="status">${n.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${fmt(n.power)}</td><td class="num">${n.temperature == null ? "–" : fmt(n.temperature)}</td><td class="num">${[n.build_area, n.build_area2].filter(Boolean).map(esc).join(" / ") || "–"}</td>` : `<td class="num">${n.tier}</td>`}<td>${isB ? `<button data-toggle="${n.id}">${t(n.unlocked ? "bp.lock" : "bp.unlock")}</button> ` : ""}<button data-edit="${n.id}">${t("common.edit")}</button> <button class="danger" data-del="${n.id}">${t("common.delete")}</button></td></tr>`).join("");
+    $("#"+kind+"-rows").innerHTML = list.map((n) => `<tr${isB ? ` class="${n.unlocked ? "bp-unlocked" : "bp-locked"}"` : ""}><td>${iconHtml(n.icon, n.name)}</td><td>${esc(n.name)}</td>${isB ? `<td>${n.category ? esc(t("category." + n.category)) : "–"}</td><td class="status">${n.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${fmt(n.power)}</td><td class="num">${n.temperature == null ? "–" : fmt(n.temperature)}</td><td class="num">${[n.build_area, n.build_area2].filter(Boolean).map(esc).join(" / ") || "–"}</td>` : `<td class="num">${n.tier}</td>`}    <td>${isB && auth.user ? `<button data-toggle="${n.id}">${t(n.unlocked ? "bp.lock" : "bp.unlock")}</button> ` : ""}${isAdmin() ? `<button data-edit="${n.id}">${t("common.edit")}</button> <button class="danger" data-del="${n.id}">${t("common.delete")}</button>` : ""}</td></tr>`).join("");
     $("#"+kind+"-rows").querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = async () => {
       const n = db.buildings.find((x) => x.id === Number(b.dataset.toggle));
-      await api("PUT", `/buildings/${n.id}`, { ...n, unlocked: !n.unlocked });
+          await api("PUT", `/unlocks/buildings/${n.id}`, { unlocked: !n.unlocked });
       await loadAll();
     }));
     $("#"+kind+"-rows").querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => edit(db[kind].find((n) => n.id === Number(b.dataset.edit)))));
@@ -302,7 +306,7 @@ function renderNamed(kind) {
       if (n) await api("PUT", `/${kind}/${n.id}`, body); else await api("POST", `/${kind}`, body);
       await loadAll();
     });
-  $("#add-" + kind).onclick = () => edit(null);
+  if (isAdmin()) $("#add-" + kind).onclick = () => edit(null);
   if (!isB) { $("#item-filter").oninput = renderRows; $("#item-tier").onchange = renderRows; $("#item-sort").onchange = renderRows; }
   renderRows();
   const seed = $("#seed");
@@ -331,7 +335,7 @@ function renderBlueprints() {
   const host = $("#tab-blueprints");
   const v = view.blueprints;
   const sel = (val) => (val === v.status ? "selected" : "");
-  host.innerHTML = `<div class="toolbar sticky"><button id="add-bp" class="active">${t("common.add", { what: t("kind.blueprint") })}</button>
+  host.innerHTML = `<div class="toolbar sticky">${isAdmin() ? `<button id="add-bp" class="active">${t("common.add", { what: t("kind.blueprint") })}</button>` : ""}
     <label>${t("bp.search")} <input id="bp-search" type="search" placeholder="${esc(t("bp.searchHint"))}" value="${esc(v.search)}"></label>
     <label>${t("bp.status")} <select id="bp-status"><option value="" ${sel("")}>${t("bp.allStatus")}</option><option value="unlocked" ${sel("unlocked")}>${t("bp.unlocked")}</option><option value="locked" ${sel("locked")}>${t("bp.locked")}</option></select></label></div>
     <table><thead><tr><th>${t("common.icon")}</th><th>${t("common.name")}</th><th>${t("bp.status")}</th><th class="num">${t("item.tier")}</th><th>${t("bp.building")}</th><th>${t("bp.inputsShort")}</th><th>${t("bp.outputShort")}</th><th></th></tr></thead><tbody id="bp-rows"></tbody></table>`;
@@ -350,13 +354,13 @@ function renderBlueprints() {
       const bld = buildingById(b.building_id);
       return `<tr class="${b.unlocked ? "bp-unlocked" : "bp-locked"}"><td>${iconHtml(blueprintIcon(b))}</td><td>${esc(b.name)}</td><td class="status">${b.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${tierOf(b)}</td><td>${bld ? iconHtml(bld.icon, bld.name) + " " + esc(bld.name) + (bld.unlocked ? "" : " 🔒") : "–"}</td>
         <td>${ins}</td><td>${fmt(b.output_amount)}× ${esc(itemById(b.output_item_id)?.name)}</td>
-        <td><button data-toggle="${b.id}">${t(b.unlocked ? "bp.lock" : "bp.unlock")}</button> <button data-edit="${b.id}">${t("common.edit")}</button> <button class="danger" data-del="${b.id}">${t("common.delete")}</button></td></tr>`;
+        <td>${auth.user ? `<button data-toggle="${b.id}">${t(b.unlocked ? "bp.lock" : "bp.unlock")}</button> ` : ""}${isAdmin() ? `<button data-edit="${b.id}">${t("common.edit")}</button> <button class="danger" data-del="${b.id}">${t("common.delete")}</button>` : ""}</td></tr>`;
     }).join("") || `<tr><td colspan="8" class="muted">${t("bp.noResults")}</td></tr>`;
     const rows = $("#bp-rows");
     rows.querySelectorAll("[data-toggle]").forEach((x) => (x.onclick = async () => {
       const b = db.blueprints.find((w) => w.id === Number(x.dataset.toggle));
       if (!b.unlocked && buildingById(b.building_id)?.unlocked === false) return toast(t("bp.buildingLocked"));
-      await api("PUT", `/blueprints/${b.id}`, { ...b, unlocked: !b.unlocked });
+      await api("PUT", `/unlocks/blueprints/${b.id}`, { unlocked: !b.unlocked });
       await loadAll();
     }));
     rows.querySelectorAll("[data-edit]").forEach((x) => (x.onclick = () => editBlueprint(db.blueprints.find((b) => b.id === Number(x.dataset.edit)))));
@@ -367,7 +371,7 @@ function renderBlueprints() {
       await loadAll();
     }));
   };
-  $("#add-bp").onclick = () => editBlueprint(null);
+  if (isAdmin()) $("#add-bp").onclick = () => editBlueprint(null);
   $("#bp-search").oninput = renderRows;
   $("#bp-status").onchange = renderRows;
   renderRows();
@@ -450,6 +454,29 @@ function renderAll() {
   renderBlueprints();
   renderNamed("buildings");
   renderNamed("items");
+  renderManual();
+  applyAuthUi();
+}
+
+// Header (Login/Logout) und Bedienelemente, die einen Benutzer erfordern
+function applyAuthUi() {
+  const host = $("#auth");
+  if (!auth.enabled) host.innerHTML = "";
+  else if (auth.user) host.innerHTML = `<span class="user">@${esc(auth.user.login)}</span> <button id="logout" type="button">${t("auth.logout")}</button>`;
+  else host.innerHTML = `<a id="login" class="btn" href="/auth/login">${t("auth.login")}</a>`;
+  const logout = $("#logout");
+  if (logout) logout.onclick = async () => {
+    try { await api("POST", "/logout"); } catch { return; }
+    mpSwitchUser("");
+    location.reload();
+  };
+  const anon = !auth.user;
+  for (const id of ["p-saved", "p-load", "p-name", "p-save", "p-saveas", "p-del", "m-saved", "m-load", "m-name", "m-save", "m-saveas", "m-delplan"]) {
+    const el = $("#" + id);
+    el.title = anon ? t("auth.loginHint") : "";
+    if (anon) el.disabled = true;
+    else if (id !== "m-delplan") el.disabled = false;
+  }
 }
 
 document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => {
@@ -478,23 +505,30 @@ $("#p-del").onclick = async () => {
   renderPlanner();
 };
 
+const LANG_KEY = "language";
 const langSelect = $("#lang");
 langSelect.innerHTML = LANGUAGES.map((l) => `<option value="${l.code}">${l.flag} ${l.label}</option>`).join("");
 langSelect.onchange = async () => {
   await i18next.changeLanguage(langSelect.value);
+  try { localStorage.setItem(LANG_KEY, langSelect.value); } catch { /* storage unavailable */ }
   renderAll();
-  try { await api("PUT", "/settings/language", { value: langSelect.value }); } catch { /* error already shown */ }
 };
 
 async function init() {
   let lang = "en";
   try {
-    const s = await fetch("/api/settings/language").then((r) => r.json());
-    if (LANGUAGES.some((l) => l.code === s.value)) lang = s.value;
+    const stored = localStorage.getItem(LANG_KEY);
+    if (LANGUAGES.some((l) => l.code === stored)) lang = stored;
   } catch { /* fall back to English */ }
   await i18next.init({ lng: lang, fallbackLng: "en", supportedLngs: LANGUAGES.map((l) => l.code), resources: RESOURCES });
   langSelect.value = lang;
   applyStaticTexts();
+  try {
+    const me = await fetch("/api/me").then((r) => r.json());
+    auth.enabled = me.auth_enabled;
+    auth.user = me.user;
+  } catch { /* treat as signed out */ }
+  mpSwitchUser(auth.user?.login ?? "");
   await loadAll();
 }
 

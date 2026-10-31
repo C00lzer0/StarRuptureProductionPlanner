@@ -1,14 +1,20 @@
+mod auth;
+
+use auth::{Admin, AuthConfig, AuthUser, MaybeUser};
 use axum::{
     Json, Router,
-    extract::{Path, State},
-    http::StatusCode,
-    routing::{get, put},
+    extract::{Path, Request, State},
+    http::{Method, StatusCode, header},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post, put},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{
     FromRow, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
+use std::sync::Arc;
 use tower_http::services::ServeDir;
 
 type ApiError = (StatusCode, String);
@@ -110,8 +116,10 @@ struct Plan {
 #[derive(Clone)]
 struct AppState {
     pool: SqlitePool,
+    auth: Arc<AuthConfig>,
 }
 
+// Items, Gebäude und Blueprints sind gemeinsame Stammdaten und nur für Admins änderbar
 async fn delete_from(pool: &SqlitePool, table: &str, id: i64) -> Result<StatusCode, ApiError> {
     sqlx::query(&format!("DELETE FROM {table} WHERE id = ?"))
         .bind(id)
@@ -128,7 +136,11 @@ async fn items_list(State(s): State<AppState>) -> ApiResult<Vec<Item>> {
         .map(Json)
         .map_err(err)
 }
-async fn items_create(State(s): State<AppState>, Json(n): Json<Item>) -> ApiResult<Item> {
+async fn items_create(
+    _: Admin,
+    State(s): State<AppState>,
+    Json(n): Json<Item>,
+) -> ApiResult<Item> {
     validate_tier(n.tier)?;
     let r = sqlx::query("INSERT INTO items (name, icon, tier) VALUES (?, ?, ?)")
         .bind(&n.name)
@@ -143,6 +155,7 @@ async fn items_create(State(s): State<AppState>, Json(n): Json<Item>) -> ApiResu
     }))
 }
 async fn items_update(
+    _: Admin,
     State(s): State<AppState>,
     Path(id): Path<i64>,
     Json(n): Json<Item>,
@@ -159,22 +172,33 @@ async fn items_update(
     Ok(Json(Item { id, ..n }))
 }
 async fn items_delete(
+    _: Admin,
     State(s): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, ApiError> {
     delete_from(&s.pool, "items", id).await
 }
 
-async fn buildings_list(State(s): State<AppState>) -> ApiResult<Vec<Building>> {
+async fn buildings_list(
+    MaybeUser(user): MaybeUser,
+    State(s): State<AppState>,
+) -> ApiResult<Vec<Building>> {
+    // Der Freischalt-Status ist pro Benutzer überschreibbar (Standardwert aus den Stammdaten)
     sqlx::query_as::<_, Building>(
-        "SELECT id, name, icon, power, temperature, build_area, build_area2, category, unlocked FROM buildings ORDER BY name",
+        "SELECT b.id, b.name, b.icon, b.power, b.temperature, b.build_area, b.build_area2, b.category,
+                COALESCE(u.unlocked, b.unlocked) AS unlocked
+         FROM buildings b
+         LEFT JOIN user_building_unlocks u ON u.building_id = b.id AND u.user_id = ?
+         ORDER BY b.name",
     )
+    .bind(user.map_or(0, |u| u.id))
     .fetch_all(&s.pool)
     .await
     .map(Json)
     .map_err(err)
 }
 async fn buildings_create(
+    _: Admin,
     State(s): State<AppState>,
     Json(b): Json<Building>,
 ) -> ApiResult<Building> {
@@ -199,6 +223,7 @@ async fn buildings_create(
     }))
 }
 async fn buildings_update(
+    _: Admin,
     State(s): State<AppState>,
     Path(id): Path<i64>,
     Json(b): Json<Building>,
@@ -280,6 +305,7 @@ fn validate_tier(tier: i64) -> Result<(), ApiError> {
     Ok(())
 }
 async fn buildings_delete(
+    _: Admin,
     State(s): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, ApiError> {
@@ -288,10 +314,21 @@ async fn buildings_delete(
 
 // ---------- blueprints ----------
 
-async fn blueprints_list(State(s): State<AppState>) -> ApiResult<Vec<Blueprint>> {
+async fn blueprints_list(
+    MaybeUser(user): MaybeUser,
+    State(s): State<AppState>,
+) -> ApiResult<Vec<Blueprint>> {
+    // Effektiv freigeschaltet: Blueprint-Status (ggf. pro Benutzer) und Status des Gebäudes
     let rows = sqlx::query_as::<_, BlueprintRow>(
-        "SELECT id, name, icon, building_id, output_item_id, output_amount, unlocked FROM blueprints ORDER BY name",
+        "SELECT bp.id, bp.name, bp.icon, bp.building_id, bp.output_item_id, bp.output_amount,
+                (COALESCE(ubp.unlocked, bp.unlocked) AND COALESCE(ub.unlocked, b.unlocked, 1)) AS unlocked
+         FROM blueprints bp
+         LEFT JOIN buildings b ON b.id = bp.building_id
+         LEFT JOIN user_blueprint_unlocks ubp ON ubp.blueprint_id = bp.id AND ubp.user_id = ?1
+         LEFT JOIN user_building_unlocks ub ON ub.building_id = bp.building_id AND ub.user_id = ?1
+         ORDER BY bp.name",
     )
+    .bind(user.map_or(0, |u| u.id))
     .fetch_all(&s.pool)
     .await
     .map_err(err)?;
@@ -400,12 +437,14 @@ async fn save_blueprint(
 }
 
 async fn blueprints_create(
+    _: Admin,
     State(s): State<AppState>,
     Json(b): Json<Blueprint>,
 ) -> ApiResult<Blueprint> {
     save_blueprint(&s.pool, None, b).await
 }
 async fn blueprints_update(
+    _: Admin,
     State(s): State<AppState>,
     Path(id): Path<i64>,
     Json(b): Json<Blueprint>,
@@ -413,53 +452,263 @@ async fn blueprints_update(
     save_blueprint(&s.pool, Some(id), b).await
 }
 async fn blueprints_delete(
+    _: Admin,
     State(s): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, ApiError> {
     delete_from(&s.pool, "blueprints", id).await
 }
 
-// ---------- plans ----------
+// ---------- unlock state (per user) ----------
 
-async fn plans_list(State(s): State<AppState>) -> ApiResult<Vec<Plan>> {
-    sqlx::query_as::<_, Plan>("SELECT id, name, data FROM plans ORDER BY updated_at DESC")
-        .fetch_all(&s.pool)
-        .await
-        .map(Json)
-        .map_err(err)
+#[derive(Deserialize)]
+struct Unlock {
+    unlocked: bool,
 }
-async fn plans_create(State(s): State<AppState>, Json(p): Json<Plan>) -> ApiResult<Plan> {
-    let r = sqlx::query("INSERT INTO plans (name, data) VALUES (?, ?)")
-        .bind(&p.name)
-        .bind(&p.data)
-        .execute(&s.pool)
+
+async fn building_unlock(
+    AuthUser(user): AuthUser,
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    Json(v): Json<Unlock>,
+) -> Result<StatusCode, ApiError> {
+    let mut tx = s.pool.begin().await.map_err(err)?;
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM buildings WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(err)?;
+    if exists.is_none() {
+        return Err((StatusCode::NOT_FOUND, "Building not found".into()));
+    }
+    sqlx::query(
+        "INSERT INTO user_building_unlocks (user_id, building_id, unlocked) VALUES (?, ?, ?)
+         ON CONFLICT (user_id, building_id) DO UPDATE SET unlocked = excluded.unlocked",
+    )
+    .bind(user.id)
+    .bind(id)
+    .bind(v.unlocked)
+    .execute(&mut *tx)
+    .await
+    .map_err(err)?;
+    // A locked building cannot be used, so its blueprints are locked as well
+    if !v.unlocked {
+        sqlx::query(
+            "INSERT INTO user_blueprint_unlocks (user_id, blueprint_id, unlocked)
+             SELECT ?, id, 0 FROM blueprints WHERE building_id = ?
+             ON CONFLICT (user_id, blueprint_id) DO UPDATE SET unlocked = 0",
+        )
+        .bind(user.id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(err)?;
+    }
+    tx.commit().await.map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn blueprint_unlock(
+    AuthUser(user): AuthUser,
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    Json(v): Json<Unlock>,
+) -> Result<StatusCode, ApiError> {
+    let mut tx = s.pool.begin().await.map_err(err)?;
+    let row: Option<(Option<bool>,)> = sqlx::query_as(
+        "SELECT COALESCE(ub.unlocked, b.unlocked) FROM blueprints bp
+         LEFT JOIN buildings b ON b.id = bp.building_id
+         LEFT JOIN user_building_unlocks ub ON ub.building_id = bp.building_id AND ub.user_id = ?
+         WHERE bp.id = ?",
+    )
+    .bind(user.id)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(err)?;
+    let Some((building_unlocked,)) = row else {
+        return Err((StatusCode::NOT_FOUND, "Blueprint not found".into()));
+    };
+    if v.unlocked && building_unlocked == Some(false) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Blueprint cannot be unlocked while its building is locked".into(),
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO user_blueprint_unlocks (user_id, blueprint_id, unlocked) VALUES (?, ?, ?)
+         ON CONFLICT (user_id, blueprint_id) DO UPDATE SET unlocked = excluded.unlocked",
+    )
+    .bind(user.id)
+    .bind(id)
+    .bind(v.unlocked)
+    .execute(&mut *tx)
+    .await
+    .map_err(err)?;
+    tx.commit().await.map_err(err)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------- plans (per user) ----------
+
+const MAX_PLANS_PER_USER: i64 = 200;
+const MAX_PLAN_BYTES: usize = 1_000_000;
+
+fn validate_plan(p: &Plan) -> Result<(), ApiError> {
+    if p.name.trim().is_empty() || p.name.chars().count() > 200 {
+        return Err((StatusCode::BAD_REQUEST, "Invalid plan name".into()));
+    }
+    if p.data.len() > MAX_PLAN_BYTES {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, "Plan is too large".into()));
+    }
+    Ok(())
+}
+
+// table stammt ausschließlich aus Konstanten dieses Moduls, nie aus Benutzereingaben
+async fn plans_list_of(pool: &SqlitePool, table: &str, user_id: i64) -> ApiResult<Vec<Plan>> {
+    sqlx::query_as::<_, Plan>(&format!(
+        "SELECT id, name, data FROM {table} WHERE user_id = ? ORDER BY updated_at DESC"
+    ))
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .map(Json)
+    .map_err(err)
+}
+
+async fn plans_create_in(
+    pool: &SqlitePool,
+    table: &str,
+    user_id: i64,
+    p: Plan,
+) -> ApiResult<Plan> {
+    validate_plan(&p)?;
+    let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table} WHERE user_id = ?"))
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .map_err(err)?;
+    if count >= MAX_PLANS_PER_USER {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Plan limit reached".into(),
+        ));
+    }
+    let r = sqlx::query(&format!(
+        "INSERT INTO {table} (user_id, name, data) VALUES (?, ?, ?)"
+    ))
+    .bind(user_id)
+    .bind(&p.name)
+    .bind(&p.data)
+    .execute(pool)
+    .await
+    .map_err(err)?;
     Ok(Json(Plan {
         id: r.last_insert_rowid(),
         ..p
     }))
 }
+
+async fn plans_update_in(
+    pool: &SqlitePool,
+    table: &str,
+    user_id: i64,
+    id: i64,
+    p: Plan,
+) -> ApiResult<Plan> {
+    validate_plan(&p)?;
+    let r = sqlx::query(&format!(
+        "UPDATE {table} SET name = ?, data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?"
+    ))
+    .bind(&p.name)
+    .bind(&p.data)
+    .bind(id)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .map_err(err)?;
+    // Fremde und nicht vorhandene Pläne sind nicht unterscheidbar
+    if r.rows_affected() == 0 {
+        return Err((StatusCode::NOT_FOUND, "Plan not found".into()));
+    }
+    Ok(Json(Plan { id, ..p }))
+}
+
+async fn plans_delete_in(
+    pool: &SqlitePool,
+    table: &str,
+    user_id: i64,
+    id: i64,
+) -> Result<StatusCode, ApiError> {
+    let r = sqlx::query(&format!(
+        "DELETE FROM {table} WHERE id = ? AND user_id = ?"
+    ))
+    .bind(id)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .map_err(err)?;
+    if r.rows_affected() == 0 {
+        return Err((StatusCode::NOT_FOUND, "Plan not found".into()));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn plans_list(AuthUser(u): AuthUser, State(s): State<AppState>) -> ApiResult<Vec<Plan>> {
+    plans_list_of(&s.pool, "plans", u.id).await
+}
+async fn plans_create(
+    AuthUser(u): AuthUser,
+    State(s): State<AppState>,
+    Json(p): Json<Plan>,
+) -> ApiResult<Plan> {
+    plans_create_in(&s.pool, "plans", u.id, p).await
+}
 async fn plans_update(
+    AuthUser(u): AuthUser,
     State(s): State<AppState>,
     Path(id): Path<i64>,
     Json(p): Json<Plan>,
 ) -> ApiResult<Plan> {
-    sqlx::query("UPDATE plans SET name = ?, data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(&p.name)
-        .bind(&p.data)
-        .bind(id)
-        .execute(&s.pool)
-        .await
-        .map_err(err)?;
-    Ok(Json(Plan { id, ..p }))
+    plans_update_in(&s.pool, "plans", u.id, id, p).await
 }
 async fn plans_delete(
+    AuthUser(u): AuthUser,
     State(s): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, ApiError> {
-    delete_from(&s.pool, "plans", id).await
+    plans_delete_in(&s.pool, "plans", u.id, id).await
 }
+
+async fn manual_plans_list(
+    AuthUser(u): AuthUser,
+    State(s): State<AppState>,
+) -> ApiResult<Vec<Plan>> {
+    plans_list_of(&s.pool, "manual_plans", u.id).await
+}
+async fn manual_plans_create(
+    AuthUser(u): AuthUser,
+    State(s): State<AppState>,
+    Json(p): Json<Plan>,
+) -> ApiResult<Plan> {
+    plans_create_in(&s.pool, "manual_plans", u.id, p).await
+}
+async fn manual_plans_update(
+    AuthUser(u): AuthUser,
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    Json(p): Json<Plan>,
+) -> ApiResult<Plan> {
+    plans_update_in(&s.pool, "manual_plans", u.id, id, p).await
+}
+async fn manual_plans_delete(
+    AuthUser(u): AuthUser,
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    plans_delete_in(&s.pool, "manual_plans", u.id, id).await
+}
+
 
 async fn images_list() -> Json<Vec<String>> {
     const EXT: [&str; 7] = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"];
@@ -480,37 +729,31 @@ async fn images_list() -> Json<Vec<String>> {
     Json(files)
 }
 
-// ---------- settings ----------
+// ---------- security ----------
 
-#[derive(Serialize, Deserialize)]
-struct Setting {
-    value: String,
-}
-
-const LANGUAGES: [&str; 4] = ["en", "de", "es", "fr"];
-
-async fn language_get(State(s): State<AppState>) -> ApiResult<Setting> {
-    let v: Option<String> = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'language'")
-        .fetch_optional(&s.pool)
-        .await
-        .map_err(err)?;
-    Ok(Json(Setting {
-        value: v
-            .filter(|v| LANGUAGES.contains(&v.as_str()))
-            .unwrap_or_else(|| "en".into()),
-    }))
-}
-
-async fn language_put(State(s): State<AppState>, Json(v): Json<Setting>) -> ApiResult<Setting> {
-    if !LANGUAGES.contains(&v.value.as_str()) {
-        return Err((StatusCode::BAD_REQUEST, "Unsupported language".into()));
+// Schreibende Anfragen müssen vom eigenen Origin kommen (zusätzlich zu SameSite=Lax)
+async fn same_origin(State(s): State<AppState>, req: Request, next: Next) -> Response {
+    if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
+        && let Some(origin) = req.headers().get(header::ORIGIN)
+    {
+        let expected = match &s.auth.oauth {
+            Some(o) => o.base_url.split_once("://").map(|(_, h)| h.to_string()),
+            None => req
+                .headers()
+                .get(header::HOST)
+                .and_then(|h| h.to_str().ok())
+                .map(str::to_string),
+        };
+        let actual = origin
+            .to_str()
+            .ok()
+            .and_then(|o| o.split_once("://"))
+            .map(|(_, h)| h);
+        if expected.as_deref() != actual {
+            return (StatusCode::FORBIDDEN, "Cross-origin request rejected").into_response();
+        }
     }
-    sqlx::query("INSERT INTO settings (key, value) VALUES ('language', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-        .bind(&v.value)
-        .execute(&s.pool)
-        .await
-        .map_err(err)?;
-    Ok(Json(v))
+    next.run(req).await
 }
 
 // ---------- setup ----------
@@ -557,7 +800,35 @@ const SCHEMA: &[&str] = &[
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     )",
+    "CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        github_id INTEGER NOT NULL UNIQUE,
+        login TEXT NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at INTEGER NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS user_building_unlocks (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        building_id INTEGER NOT NULL REFERENCES buildings(id) ON DELETE CASCADE,
+        unlocked INTEGER NOT NULL,
+        PRIMARY KEY (user_id, building_id)
+    )",
+    "CREATE TABLE IF NOT EXISTS user_blueprint_unlocks (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        blueprint_id INTEGER NOT NULL REFERENCES blueprints(id) ON DELETE CASCADE,
+        unlocked INTEGER NOT NULL,
+        PRIMARY KEY (user_id, blueprint_id)
+    )",
     "CREATE TABLE IF NOT EXISTS plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )",
+    "CREATE TABLE IF NOT EXISTS manual_plans (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         data TEXT NOT NULL,
@@ -641,6 +912,29 @@ async fn main() {
             .expect("Migration unlocked");
     }
 
+    // Pläne gehören einem Benutzer; ältere Datenbanken erhalten die Spalte nachträglich
+    for table in ["plans", "manual_plans"] {
+        let plan_cols: Vec<String> =
+            sqlx::query_scalar(&format!("SELECT name FROM pragma_table_info('{table}')"))
+                .fetch_all(&pool)
+                .await
+                .expect("Plan-Schema-Prüfung");
+        if !plan_cols.iter().any(|c| c == "user_id") {
+            sqlx::query(&format!(
+                "ALTER TABLE {table} ADD COLUMN user_id INTEGER NULL REFERENCES users(id) ON DELETE CASCADE"
+            ))
+            .execute(&pool)
+            .await
+            .expect("Migration user_id");
+        }
+        sqlx::query(&format!(
+            "CREATE INDEX IF NOT EXISTS idx_{table}_user ON {table}(user_id)"
+        ))
+        .execute(&pool)
+        .await
+        .expect("Index user_id");
+    }
+
     // Neu erstellte Datenbank mit den Basisdaten befüllen
     if is_new_db {
         let mut tx = pool.begin().await.expect("Seed-Transaktion");
@@ -652,7 +946,25 @@ async fn main() {
         println!("Neue Datenbank mit Basisdaten aus seed.sql befüllt");
     }
 
+    let addr = std::env::var("BIND").unwrap_or_else(|_| "127.0.0.1:3000".into());
+    let auth = AuthConfig::from_env(&pool).await;
+    // Ohne Login hat jeder Zugreifer Adminrechte – daher nur lokal erlauben
+    let loopback = addr
+        .rsplit_once(':')
+        .is_some_and(|(h, _)| matches!(h, "127.0.0.1" | "localhost" | "[::1]"));
+    if auth.oauth.is_none() && !loopback {
+        panic!(
+            "BIND={addr} ist nicht lokal. Für den öffentlichen Betrieb GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET und PUBLIC_URL setzen (siehe README)."
+        );
+    }
+    let state = AppState {
+        pool: pool.clone(),
+        auth: Arc::new(auth),
+    };
+
     let api = Router::new()
+        .route("/me", get(auth::me))
+        .route("/logout", post(auth::logout))
         .route("/items", get(items_list).post(items_create))
         .route("/items/{id}", put(items_update).delete(items_delete))
         .route("/buildings", get(buildings_list).post(buildings_create))
@@ -665,21 +977,32 @@ async fn main() {
             "/blueprints/{id}",
             put(blueprints_update).delete(blueprints_delete),
         )
-        .route("/settings/language", get(language_get).put(language_put))
+        .route("/unlocks/buildings/{id}", put(building_unlock))
+        .route("/unlocks/blueprints/{id}", put(blueprint_unlock))
         .route("/images", get(images_list))
         .route("/plans", get(plans_list).post(plans_create))
         .route("/plans/{id}", put(plans_update).delete(plans_delete))
-        .with_state(AppState { pool: pool.clone() });
+        .route(
+            "/manual-plans",
+            get(manual_plans_list).post(manual_plans_create),
+        )
+        .route(
+            "/manual-plans/{id}",
+            put(manual_plans_update).delete(manual_plans_delete),
+        );
 
     let app = Router::new()
+        .route("/auth/login", get(auth::login))
+        .route("/auth/callback", get(auth::callback))
         .nest("/api", api)
         .nest_service("/images", ServeDir::new(IMAGE_DIR))
         .fallback_service(ServeDir::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/static"
-        )));
+        )))
+        .layer(middleware::from_fn_with_state(state.clone(), same_origin))
+        .with_state(state);
 
-    let addr = std::env::var("BIND").unwrap_or_else(|_| "127.0.0.1:3000".into());
     println!("Production Planner auf http://{addr} (Datenbank: {path})");
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

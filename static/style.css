@@ -12,6 +12,11 @@ button.active, nav button.active { background:var(--accent); color:#111; border-
 button.danger:hover { border-color:var(--danger); color:var(--danger); }
 nav { display:flex; gap:6px; }
 .lang { margin-left:auto; }
+.auth { display:flex; align-items:center; gap:8px; }
+.auth .user { color:var(--muted); }
+a.btn { background:#2a313c; color:var(--text); border:1px solid var(--line); border-radius:4px; padding:6px 10px; text-decoration:none; }
+a.btn:hover { border-color:var(--accent); }
+button:disabled, select:disabled, input:disabled { opacity:.5; cursor:not-allowed; }
 .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
 .toolbar label { display:flex; gap:6px; align-items:center; color:var(--muted); }
 .toolbar.sticky { position:sticky; top:52px; z-index:4; margin:-16px -16px 10px; padding:10px 16px; background:var(--bg); border-bottom:1px solid var(--line); }
@@ -52,5 +57,20 @@ dialog::backdrop { background:#0008; }
 .row select { flex:1; } .row input[type=number] { width:100px; }
 .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
 .choice { display:block; padding:4px 0; }
+.manual-svg { width:100%; height:calc(100vh - 190px); min-height:400px; background:var(--panel); border:1px solid var(--line); border-radius:6px; display:block; outline:none; user-select:none; }
+.mnode rect { fill:#27303b; stroke:#5b6678; stroke-width:2; cursor:move; }
+.mnode.sel rect { stroke:var(--accent); stroke-width:3; }
+.mnode.ghost { opacity:.6; pointer-events:none; }
+.mnode.bad rect { stroke:var(--danger); fill:#d9534f44; }
+.mlabel { font-size:10px; }
+.mport { cursor:crosshair; }
+.mport circle { stroke:#111; stroke-width:1.5; }
+.mport.in circle { fill:#4aa3df; }
+.mport.out circle { fill:#6fcf8f; }
+.mport:hover circle { stroke:var(--accent); }
+.mlink { fill:none; stroke:#8fb8de; stroke-width:3; pointer-events:none; }
+.mlink.sel { stroke:var(--accent); }
+.mlink.pending { stroke-dasharray:6 4; }
+.mlink-hit { fill:none; stroke:transparent; stroke-width:12; cursor:pointer; }
 #toast { position:fixed; right:16px; bottom:16px; background:var(--danger); padding:10px 16px; border-radius:6px; z-index:10; }
 #toast.ok { background:#3c8d57; }

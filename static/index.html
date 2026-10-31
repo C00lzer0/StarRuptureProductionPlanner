@@ -14,8 +14,10 @@
     <button data-tab="blueprints"></button>
     <button data-tab="buildings"></button>
     <button data-tab="items"></button>
+    <button data-tab="manual"></button>
   </nav>
   <select id="lang" class="lang" data-i18n-title="lang.label"></select>
+  <div id="auth" class="auth"></div>
 </header>
 <div id="toast" hidden></div>
 
@@ -47,11 +49,35 @@
   <section id="tab-blueprints" hidden></section>
   <section id="tab-buildings" hidden></section>
   <section id="tab-items" hidden></section>
+  <section id="tab-manual" hidden>
+    <div class="toolbar">
+      <label><span data-i18n="planner.plan"></span> <select id="m-saved"></select></label>
+      <button id="m-load" type="button" data-i18n="planner.load"></button>
+      <input id="m-name" data-i18n-placeholder="planner.name">
+      <button id="m-save" type="button" data-i18n="planner.save"></button>
+      <button id="m-saveas" type="button" data-i18n="planner.saveAs"></button>
+      <button id="m-delplan" type="button" class="danger" data-i18n="planner.delete"></button>
+      <button id="m-new" type="button" data-i18n="manual.new"></button>
+    </div>
+      <label><span data-i18n="manual.building"></span> <select id="m-building"></select></label>
+      <button id="m-size" type="button" data-i18n-title="manual.sizeHint"></button>
+      <button id="m-rot-l" type="button" data-i18n-title="manual.rotL">⟲</button>
+      <button id="m-rot-r" type="button" data-i18n-title="manual.rotR">⟳</button>
+      <label><span data-i18n="manual.blueprint"></span> <select id="m-bp"></select></label>
+      <button id="m-del" type="button" class="danger" data-i18n="manual.delete"></button>
+      <span class="sep"></span>
+      <button id="m-center" type="button" data-i18n="manual.reset"></button>
+      <button id="m-clear" type="button" class="danger" data-i18n="manual.clear"></button>
+    </div>
+    <div class="toolbar"><span class="info" data-i18n="manual.hint"></span></div>
+    <svg id="m-svg" class="manual-svg" tabindex="0"></svg>
+  </section>
 </main>
 
 <dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
 <script src="vendor/i18next.min.js"></script>
 <script src="locales.js"></script>
 <script src="app.js"></script>
+<script src="manual.js"></script>
 </body>
 </html>
