@@ -1,0 +1,6 @@
+/target
+mysql-data/
+mysql/
+target/
+
+productionplanner.db*

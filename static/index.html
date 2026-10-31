@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Production Planner</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🏭 <span data-i18n="app.title">Production Planner</span></h1>
+  <nav id="tabs">
+    <button data-tab="planner" class="active"></button>
+    <button data-tab="blueprints"></button>
+    <button data-tab="buildings"></button>
+    <button data-tab="items"></button>
+  </nav>
+  <select id="lang" class="lang" data-i18n-title="lang.label"></select>
+</header>
+<div id="toast" hidden></div>
+
+<main>
+  <section id="tab-planner">
+    <div class="toolbar">
+      <label><span data-i18n="planner.target"></span> <select id="p-target"></select></label>
+      <label><span data-i18n="planner.rate"></span> <input id="p-rate" type="number" min="0.01" step="any" value="60"><button id="p-rate-reset" type="button">↺</button></label>
+      <span class="sep"></span>
+      <label><span data-i18n="planner.plan"></span> <select id="p-saved"></select></label>
+      <button id="p-load" data-i18n="planner.load"></button>
+      <input id="p-name" data-i18n-placeholder="planner.name">
+      <button id="p-save" data-i18n="planner.save"></button>
+      <button id="p-saveas" data-i18n="planner.saveAs"></button>
+      <button id="p-del" class="danger" data-i18n="planner.delete"></button>
+    </div>
+    <div class="toolbar">
+      <div class="seg">
+        <button data-view="graph" class="active" data-i18n="view.graph"></button>
+        <button data-view="summary" data-i18n="view.summary"></button>
+      </div>
+      <span class="info" data-i18n="planner.info"></span>
+      <span id="p-warn" class="warn"></span>
+    </div>
+    <div id="view-graph" class="graph-wrap"></div>
+    <div id="view-summary" hidden></div>
+  </section>
+
+  <section id="tab-blueprints" hidden></section>
+  <section id="tab-buildings" hidden></section>
+  <section id="tab-items" hidden></section>
+</main>
+
+<dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
+<script src="vendor/i18next.min.js"></script>
+<script src="locales.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
