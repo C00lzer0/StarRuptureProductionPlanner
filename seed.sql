@@ -129,27 +129,27 @@ INSERT INTO items (id, name, icon, tier) VALUES (124, 'Shotgun Ammo', '', 0);
 INSERT INTO items (id, name, icon, tier) VALUES (125, 'Standard Ammo', '', 0);
 
 -- buildings
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (1, 'Ore Excavator', '', 5.0, 3.0, '6*8', NULL, 'extraction', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (2, 'Helium-3 Extractor', '', 15.0, 60.0, '8*7', NULL, 'extraction', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (3, 'Sulfur Extractor', '', 40.0, 60.0, '5*4', NULL, 'extraction', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (4, 'Laser Drill', '', 250.0, 200.0, '4*4', NULL, 'extraction', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (5, 'Oil Extractor', '', 400.0, 300.0, NULL, NULL, 'extraction', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (6, 'Ore Excavator v2', '', 30.0, 18.0, '6*8', NULL, 'extraction', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (7, 'Smelter', '', 5.0, 3.0, '3*4', '4*4', 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (8, 'Furnance', '', 20.0, 8.0, '3*4', '4*4', 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (9, 'Megapress', '', 30.0, 15.0, '3*6', '4*6', 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (10, 'Compounder', '', 60.0, 150.0, '5*6', '6*6', 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (11, 'Pyro Forge', '', 200.0, 180.0, '5*6', '6*6', 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (12, 'Furnance v2', '', 50.0, 14.0, '4*5', '5*5', 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (13, 'Compounder v2', '', 180.0, 250.0, '7*7', NULL, 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (14, 'Fabricator', '', 10.0, 5.0, '3*3', '4*3', 'manufacturing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (15, 'Assembler', '', 60.0, 150.0, '3*6', '4*6', 'manufacturing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (16, 'Constructorizer', '', 700.0, 500.0, NULL, NULL, 'manufacturing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (17, 'Fabricator v2', '', 25.0, 8.0, '4*4', '5*4', 'manufacturing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (18, 'Constructorizer v2', '', 700.0, 500.0, NULL, NULL, 'manufacturing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (19, 'Facturer', '', 850.0, 650.0, NULL, NULL, 'manufacturing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (20, 'Pressurizer', '', 40.0, 60.0, '5*5', '6*5', 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (21, 'Refinery', '', 150.0, 100.0, '6*6', '7*6', 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (1, 'Ore Excavator', '', -5.0, 3.0, '6*8', NULL, 'extraction', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (2, 'Helium-3 Extractor', '', -15.0, 60.0, '8*7', NULL, 'extraction', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (3, 'Sulfur Extractor', '', -40.0, 60.0, '5*4', NULL, 'extraction', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (4, 'Laser Drill', '', -250.0, 200.0, '4*4', NULL, 'extraction', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (5, 'Oil Extractor', '', -400.0, 300.0, NULL, NULL, 'extraction', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (6, 'Ore Excavator v2', '', -30.0, 18.0, '6*8', NULL, 'extraction', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (7, 'Smelter', '', -5.0, 3.0, '3*4', '4*4', 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (8, 'Furnance', '', -20.0, 8.0, '3*4', '4*4', 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (9, 'Megapress', '', -30.0, 15.0, '3*6', '4*6', 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (10, 'Compounder', '', -60.0, 150.0, '5*6', '6*6', 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (11, 'Pyro Forge', '', -200.0, 180.0, '5*6', '6*6', 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (12, 'Furnance v2', '', -50.0, 14.0, '4*5', '5*5', 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (13, 'Compounder v2', '', -180.0, 250.0, '7*7', NULL, 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (14, 'Fabricator', '', -10.0, 5.0, '3*3', '4*3', 'manufacturing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (15, 'Assembler', '', -60.0, 150.0, '3*6', '4*6', 'manufacturing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (16, 'Constructorizer', '', -700.0, 500.0, NULL, NULL, 'manufacturing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (17, 'Fabricator v2', '', -25.0, 8.0, '4*4', '5*4', 'manufacturing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (18, 'Constructorizer v2', '', -700.0, 500.0, NULL, NULL, 'manufacturing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (19, 'Facturer', '', -850.0, 650.0, NULL, NULL, 'manufacturing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (20, 'Pressurizer', '', -40.0, 60.0, '5*5', '6*5', 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (21, 'Refinery', '', -150.0, 100.0, '6*6', '7*6', 'processing', 1);
 
 -- blueprints
 INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (1, 'Titanium Ore (impure)', '', 1, 1, 60.0, 1);

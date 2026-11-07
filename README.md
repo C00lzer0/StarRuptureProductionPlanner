@@ -8,11 +8,14 @@
 
 **Production Planner** ist ein lokales Web-Tool zur Planung von Produktionsketten im Spiel **StarRupture**. Man hinterlegt Items, Gebäude und Blueprints (Rezepte); der Planer berechnet daraus den kompletten Produktionsbaum für ein Zielitem mit gewünschter Rate.
 
+> 🤖 Dieses Tool wurde mithilfe von KI (GitHub Copilot) erstellt.
+
 ### Funktionen
 
 - **Planer**: Zielitem und Rate wählen, Produktionsbaum als Graph oder als Zusammenfassung anzeigen. Pro Node kann ein alternativer Blueprint gewählt werden.
+- **Materialfluss**: Matrix aller Blueprints (Zeilen = produziertes Item, Spalten = benötigte Inputs, nach Produktionsstufe sortiert). Zeigt, von welcher bis zu welcher Stufe ein Input-Item benötigt wird, um Überlastungen des Transportnetzwerks zu erkennen.
 - **Pläne speichern**: Pläne benennen, speichern, laden und löschen.
-- **Blueprints, Gebäude, Items**: Verwaltung (anlegen, bearbeiten, löschen) inklusive Icons, Tier, Stromverbrauch, Temperatur, Baufläche, Kategorie und Freischalt-Status.
+- **Blueprints, Gebäude, Items**: Verwaltung (anlegen, bearbeiten, löschen) inklusive Icons, Tier, Energie (negativ = Verbrauch, positiv = Erzeugung), Temperatur, Baufläche, Kategorie und Freischalt-Status. Beim Entsperren eines Gebäudes wird nachgefragt, ob auch dessen Blueprints entsperrt werden sollen; Blueprints lassen sich zusätzlich per Tier bzw. Tier-Bereich gesammelt sperren/entsperren.
 - **Mehrsprachig**: Oberfläche auf Deutsch, Englisch, Spanisch und Französisch (i18next); die Sprache wird im Browser gespeichert.
 - **Lokale Datenhaltung**: SQLite-Datenbank, die beim ersten Start automatisch angelegt, mit den Basisdaten aus `seed.sql` gefüllt und bei Bedarf migriert wird.
 
@@ -75,11 +78,14 @@ productionplanner.db  SQLite-Datenbank
 
 **Production Planner** is a local web tool for planning production chains in the game **StarRupture**. You maintain items, buildings and blueprints (recipes); the planner then calculates the complete production tree for a target item at a desired rate.
 
+> 🤖 This tool was created with the help of AI (GitHub Copilot).
+
 ### Features
 
 - **Planner**: choose a target item and rate, and view the production tree as a graph or a summary. An alternative blueprint can be selected per node.
+- **Material flow**: matrix of all blueprints (rows = produced item, columns = required inputs, sorted by production stage) showing from which stage to which stage an input item is needed, to spot transport network overload.
 - **Saved plans**: name, save, load and delete plans.
-- **Blueprints, buildings, items**: manage (create, edit, delete) including icons, tier, power consumption, temperature, build area, category and unlock status.
+- **Blueprints, buildings, items**: manage (create, edit, delete) including icons, tier, power (negative = consumption, positive = generation), temperature, build area, category and unlock status. Unlocking a building asks whether its blueprints should be unlocked as well; blueprints can also be locked/unlocked in bulk by tier or tier range.
 - **Multilingual**: UI in German, English, Spanish and French (i18next); the language is stored in the browser.
 - **Local data storage**: SQLite database, created automatically on first start, filled with the base data from `seed.sql` and migrated when necessary.
 

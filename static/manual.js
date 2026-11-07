@@ -4,6 +4,8 @@
 // Eingänge liegen lokal immer an der oberen, der Ausgang an der unteren X-Achse des Gebäudes; Rotation dreht beides mit.
 const CELL = 40, STORE_KEY = "manualPlan.v1";
 const mp = { nodes: [], links: [], view: { x: 40, y: 40, k: 1 }, nextId: 1, sel: null, place: null, drag: null, mouse: { x: 0, y: 0 }, planId: null, planName: "", owner: "" };
+const mpPicker = { category: "", search: "" };
+const mpCategories = [...BUILDING_CATEGORIES, "other"];
 
 const parseArea = (s) => { const m = /^\s*(\d+)\s*\*\s*(\d+)\s*$/.exec(s || ""); return m ? [Number(m[1]), Number(m[2])] : null; };
 const sizesOf = (b) => [parseArea(b?.build_area), parseArea(b?.build_area2)].filter(Boolean);
@@ -111,7 +113,7 @@ function mpGhost() {
   if (!mp.place) return null;
   const b = buildingById(mp.place.bid);
   const [w, h] = sizesOf(b)[mp.place.size] ?? [1, 1];
-  const n = { id: 0, bid: b.id, bp: mpDefaultBp(b.id), w, h, rot: mp.place.rot, x: 0, y: 0 };
+  const n = { id: 0, bid: b.id, bp: mp.place.bp ?? mpDefaultBp(b.id), w, h, rot: mp.place.rot, x: 0, y: 0 };
   const [dw, dh] = mpDims(n);
   n.x = Math.round(mp.mouse.x - dw / 2);
   n.y = Math.round(mp.mouse.y - dh / 2);
@@ -133,18 +135,24 @@ function mpNodeSvg(n, ghost, bad) {
   const sel = mp.sel?.type === "n" && mp.sel.id === n.id;
   const maxChars = Math.max(4, Math.floor(px / 6));
   const name = bp ? (bp.name.length > maxChars ? bp.name.slice(0, maxChars - 1) + "…" : bp.name) : "?";
+  // Der Bereich zwischen den Port-Symbolen (oben Eingänge, unten Ausgang) wird für Symbol und Namen genutzt
+  const PORT_MARGIN = 36, PAD = 8, LABEL_H = 16;
+  const areaH = Math.max(0, py - 2 * PORT_MARGIN);
+  const iconSize = Math.max(16, Math.min(px - 2 * PAD, areaH - LABEL_H));
+  const blockH = iconSize + LABEL_H;
+  const iconY = y + py / 2 - blockH / 2;
   let s = `<g class="mnode${sel ? " sel" : ""}${ghost ? " ghost" : ""}${bad ? " bad" : ""}" data-node="${n.id}">
     <title>${esc(b?.name)} (${n.w}*${n.h})</title>
     <rect x="${x}" y="${y}" width="${px}" height="${py}" rx="4"/>
-    ${iconSvg(b?.icon, b?.name, x + px / 2 - 14, y + py / 2 - 24, 28)}
-    <text x="${x + px / 2}" y="${y + py / 2 + 20}" text-anchor="middle" class="mlabel">${esc(name)}</text>`;
+    ${iconSvg(b?.icon, b?.name, x + px / 2 - iconSize / 2, iconY, iconSize, "buildings")}
+    <text x="${x + px / 2}" y="${iconY + iconSize + 12}" text-anchor="middle" class="mlabel">${esc(name)}</text>`;
   for (const p of mpPorts(n)) {
     const it = itemById(p.item);
     const cx = p.x * CELL, cy = p.y * CELL;
     const title = `${p.kind === "in" ? "⬅" : "➡"} ${it?.name ?? ""} (${fmt(p.amount)}/min)`;
     s += `<g class="mport ${p.kind}" data-port="${p.node}:${p.kind}:${p.idx}"><title>${esc(title)}</title>
       <circle cx="${cx}" cy="${cy}" r="8"/>
-      ${iconSvg(it?.icon, it?.name, cx + p.nx * 16 - 8, cy + p.ny * 16 - 8, 16)}</g>`;
+      ${iconSvg(it?.icon, it?.name, cx + p.nx * 18 - 10, cy + p.ny * 18 - 10, 20)}</g>`;
   }
   return s + "</g>";
 }
@@ -188,6 +196,13 @@ function mpToolbar() {
   const sizes = target ? sizesOf(buildingById(target.bid)) : [];
   $("#m-size").textContent = sizes.length ? sizes.map((z, i) => (i === target.size ? `[${z[0]}*${z[1]}]` : `${z[0]}*${z[1]}`)).join(" / ") : "–";
   $("#m-size").disabled = sizes.length < 2;
+  const selectedBuilding = mp.place && buildingById(mp.place.bid);
+  $("#m-building-selected").textContent = selectedBuilding ? ` · ${selectedBuilding.name}` : "";
+  $("#m-building-list").querySelectorAll("[data-building]").forEach((button) => {
+    const selected = Number(button.dataset.building) === mp.place?.bid;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
   $("#m-del").disabled = !mp.sel;
   $("#m-rot-l").disabled = $("#m-rot-r").disabled = !(mp.place || n);
 }
@@ -228,6 +243,23 @@ function mpCycleSize() {
     if (mpOverlaps(n, n.id)) { [n.w, n.h] = old; toast(t("manual.overlap")); }
     else { mpFixLinks(); mpSave(); }
   }
+  mpRender();
+}
+
+let mpClipboard = null;
+
+function mpCopy() {
+  const n = mp.sel?.type === "n" ? mpNode(mp.sel.id) : null;
+  if (!n) return;
+  mpClipboard = { bid: n.bid, bp: n.bp, w: n.w, h: n.h, rot: n.rot };
+  toast(t("manual.copied"), true);
+}
+
+function mpPaste() {
+  if (!mpClipboard || !buildingById(mpClipboard.bid)) return;
+  const size = sizesOf(buildingById(mpClipboard.bid)).findIndex((z) => z[0] === mpClipboard.w && z[1] === mpClipboard.h);
+  mp.place = { bid: mpClipboard.bid, bp: mpClipboard.bp, size: Math.max(size, 0), rot: mpClipboard.rot };
+  mp.sel = null;
   mpRender();
 }
 
@@ -290,8 +322,8 @@ function mpInit() {
   });
 
   window.addEventListener("mousemove", (e) => {
-    if (!mp.drag && !mp.place) return;
     mp.mouse = mpToWorld(e);
+    if (!mp.drag && !mp.place) return;
     const d = mp.drag;
     if (d?.type === "pan") {
       mp.view.x = d.vx + e.clientX - d.sx;
@@ -324,7 +356,7 @@ function mpInit() {
     mpRender();
   });
 
-  svg.addEventListener("contextmenu", (e) => { e.preventDefault(); if (mp.place) { mp.place = null; $("#m-building").value = ""; mpRender(); } });
+  svg.addEventListener("contextmenu", (e) => { e.preventDefault(); if (mp.place) { mp.place = null; mpRender(); } });
 
   svg.addEventListener("wheel", (e) => {
     e.preventDefault();
@@ -343,14 +375,31 @@ function mpInit() {
     if ($("#tab-manual").hidden || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
     const key = e.key.toLowerCase();
     if (key === "x" && e.ctrlKey) { e.preventDefault(); mpCycleSize(); }
+    else if (key === "c" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); mpCopy(); }
+    else if (key === "v" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); mpPaste(); }
     else if (key === "r" && !e.ctrlKey && !e.metaKey) { e.preventDefault(); mpRotate(e.shiftKey ? -1 : 1); }
     else if (key === "delete" || key === "backspace") { e.preventDefault(); mpDelete(); }
-    else if (key === "escape") { mp.place = null; mp.drag = null; $("#m-building").value = ""; mpRender(); }
+    else if (key === "escape") { mp.place = null; mp.drag = null; mpRender(); }
   });
 
-  $("#m-building").onchange = (e) => {
-    mp.place = e.target.value ? { bid: Number(e.target.value), size: 0, rot: 0 } : null;
+  $("#m-picker-toggle").onclick = (e) => {
+    const hidden = $("#m-picker").toggleAttribute("hidden");
+    e.currentTarget.classList.toggle("active", !hidden);
+    e.currentTarget.setAttribute("aria-pressed", String(!hidden));
+  };
+  $("#m-building-list").onclick = (e) => {
+    const button = e.target.closest("[data-building]");
+    if (!button) return;
+    mp.place = { bid: Number(button.dataset.building), size: 0, rot: 0 };
     mpRender();
+  };
+  $("#m-building-category").onchange = (e) => {
+    mpPicker.category = e.target.value;
+    renderBuildingPicker();
+  };
+  $("#m-building-search").oninput = (e) => {
+    mpPicker.search = e.target.value;
+    renderBuildingPicker();
   };
   $("#m-bp").onchange = (e) => {
     const n = mp.sel?.type === "n" && mpNode(mp.sel.id);
@@ -376,14 +425,29 @@ function mpInit() {
   };
 }
 
+function renderBuildingPicker() {
+  const search = mpPicker.search.trim().toLocaleLowerCase();
+  const buildings = db.buildings.filter((b) =>
+    (!mpPicker.category || (BUILDING_CATEGORIES.includes(b.category) ? b.category : "other") === mpPicker.category) &&
+    (!search || b.name.toLocaleLowerCase().includes(search)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $("#m-building-list").innerHTML = buildings.length ? mpCategories.map((category) => {
+    const inCategory = buildings.filter((b) => (BUILDING_CATEGORIES.includes(b.category) ? b.category : "other") === category);
+    if (!inCategory.length) return "";
+    return `<section class="building-category"><h3>${t(`category.${category}`)}</h3><div class="building-options">${inCategory.map((b) =>
+      `<button type="button" class="building-option" data-building="${b.id}" aria-pressed="false" title="${esc(b.name)}">${iconHtml(b.icon, b.name, "buildings")}<span>${esc(b.name)}</span><small>${sizesOf(b).map((z) => z.join("*")).join(" / ") || "1*1"}</small></button>`).join("")}</div></section>`;
+  }).join("") : `<p class="muted">${t("manual.noBuildings")}</p>`;
+  mpToolbar();
+}
+
 // Wird von renderAll() aufgerufen (Daten oder Sprache geändert)
 function renderManual() {
-  const sel = $("#m-building");
-  const cur = sel.value;
-  sel.innerHTML = `<option value="">${t("manual.chooseBuilding")}</option>` +
-    db.buildings.filter((b) => sizesOf(b).length).sort((a, b) => a.name.localeCompare(b.name))
-      .map((b) => `<option value="${b.id}">${esc(b.name)} (${sizesOf(b).map((z) => z.join("*")).join(" / ")})</option>`).join("");
-  sel.value = cur;
+  const categorySelect = $("#m-building-category");
+  categorySelect.innerHTML = `<option value="">${t("manual.allCategories")}</option>` +
+    mpCategories.map((category) => `<option value="${category}">${t(`category.${category}`)}</option>`).join("");
+  categorySelect.value = mpPicker.category;
+  $("#m-building-search").value = mpPicker.search;
+  renderBuildingPicker();
   $("#m-saved").innerHTML = `<option value="">–</option>` + db.manualPlans.map((p) => `<option value="${p.id}" ${p.id === mp.planId ? "selected" : ""}>${esc(p.name)}</option>`).join("");
   if (document.activeElement !== $("#m-name")) $("#m-name").value = mp.planName;
   $("#m-delplan").disabled = !mp.planId;

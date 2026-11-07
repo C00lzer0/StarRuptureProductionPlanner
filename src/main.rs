@@ -3,7 +3,7 @@ mod auth;
 use auth::{Admin, AuthConfig, AuthUser, MaybeUser};
 use axum::{
     Json, Router,
-    extract::{Path, Request, State},
+    extract::{Path, Query, Request, State},
     http::{Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -222,10 +222,17 @@ async fn buildings_create(
         ..b
     }))
 }
+#[derive(Deserialize)]
+struct UnlockOptions {
+    #[serde(default)]
+    with_blueprints: bool,
+}
+
 async fn buildings_update(
     _: Admin,
     State(s): State<AppState>,
     Path(id): Path<i64>,
+    Query(opts): Query<UnlockOptions>,
     Json(b): Json<Building>,
 ) -> ApiResult<Building> {
     validate_building(&b)?;
@@ -252,12 +259,18 @@ async fn buildings_update(
             .execute(&mut *tx)
             .await
             .map_err(err)?;
+    } else if opts.with_blueprints {
+        sqlx::query("UPDATE blueprints SET unlocked = 1 WHERE building_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(err)?;
     }
     tx.commit().await.map_err(err)?;
     Ok(Json(Building { id, ..b }))
 }
 fn validate_building(b: &Building) -> Result<(), ApiError> {
-    if !b.power.is_finite() || b.power < 0.0 || b.temperature.is_some_and(|t| !t.is_finite()) {
+    if !b.power.is_finite() || b.temperature.is_some_and(|t| !t.is_finite()) {
         return Err((
             StatusCode::BAD_REQUEST,
             "Invalid power or temperature".into(),
@@ -464,6 +477,21 @@ async fn blueprints_delete(
 #[derive(Deserialize)]
 struct Unlock {
     unlocked: bool,
+    #[serde(default)]
+    with_blueprints: bool,
+}
+
+#[derive(Deserialize)]
+struct TierUnlock {
+    unlocked: bool,
+    tier_min: i64,
+    tier_max: i64,
+}
+
+#[derive(Serialize)]
+struct TierUnlockResult {
+    changed: u64,
+    skipped: u64,
 }
 
 async fn building_unlock(
@@ -503,9 +531,63 @@ async fn building_unlock(
         .execute(&mut *tx)
         .await
         .map_err(err)?;
+    } else if v.with_blueprints {
+        sqlx::query(
+            "INSERT INTO user_blueprint_unlocks (user_id, blueprint_id, unlocked)
+             SELECT ?, id, 1 FROM blueprints WHERE building_id = ?
+             ON CONFLICT (user_id, blueprint_id) DO UPDATE SET unlocked = 1",
+        )
+        .bind(user.id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(err)?;
     }
     tx.commit().await.map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// Locks or unlocks all blueprints whose output item has a tier within [tier_min, tier_max]
+async fn blueprints_unlock_tiers(
+    AuthUser(user): AuthUser,
+    State(s): State<AppState>,
+    Json(v): Json<TierUnlock>,
+) -> ApiResult<TierUnlockResult> {
+    if v.tier_min > v.tier_max {
+        return Err((StatusCode::BAD_REQUEST, "Invalid tier range".into()));
+    }
+    let mut tx = s.pool.begin().await.map_err(err)?;
+    // Blueprints of a locked building cannot be unlocked
+    let changed = sqlx::query(
+        "INSERT INTO user_blueprint_unlocks (user_id, blueprint_id, unlocked)
+         SELECT ?1, bp.id, ?2 FROM blueprints bp
+         JOIN items i ON i.id = bp.output_item_id
+         LEFT JOIN buildings b ON b.id = bp.building_id
+         LEFT JOIN user_building_unlocks ub ON ub.building_id = bp.building_id AND ub.user_id = ?1
+         WHERE i.tier BETWEEN ?3 AND ?4 AND (?2 = 0 OR COALESCE(ub.unlocked, b.unlocked, 1) = 1)
+         ON CONFLICT (user_id, blueprint_id) DO UPDATE SET unlocked = excluded.unlocked",
+    )
+    .bind(user.id)
+    .bind(v.unlocked)
+    .bind(v.tier_min)
+    .bind(v.tier_max)
+    .execute(&mut *tx)
+    .await
+    .map_err(err)?
+    .rows_affected();
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM blueprints bp JOIN items i ON i.id = bp.output_item_id WHERE i.tier BETWEEN ? AND ?",
+    )
+    .bind(v.tier_min)
+    .bind(v.tier_max)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(err)?;
+    tx.commit().await.map_err(err)?;
+    Ok(Json(TierUnlockResult {
+        changed,
+        skipped: (total as u64).saturating_sub(changed),
+    }))
 }
 
 async fn blueprint_unlock(
@@ -710,10 +792,15 @@ async fn manual_plans_delete(
 }
 
 
-async fn images_list() -> Json<Vec<String>> {
+async fn images_list() -> Json<std::collections::HashMap<&'static str, Vec<String>>> {
+    let (items, buildings) = tokio::join!(list_image_files("items"), list_image_files("buildings"));
+    Json([("items", items), ("buildings", buildings)].into())
+}
+
+async fn list_image_files(sub: &str) -> Vec<String> {
     const EXT: [&str; 7] = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"];
     let mut files = Vec::new();
-    if let Ok(mut dir) = tokio::fs::read_dir(IMAGE_DIR).await {
+    if let Ok(mut dir) = tokio::fs::read_dir(format!("{IMAGE_DIR}/{sub}")).await {
         while let Ok(Some(e)) = dir.next_entry().await {
             let path = e.path();
             let ok = path
@@ -726,7 +813,7 @@ async fn images_list() -> Json<Vec<String>> {
         }
     }
     files.sort();
-    Json(files)
+    files
 }
 
 // ---------- security ----------
@@ -946,6 +1033,27 @@ async fn main() {
         println!("Neue Datenbank mit Basisdaten aus seed.sql befüllt");
     }
 
+    // Version 1: Energie ist vorzeichenbehaftet (negativ = Verbrauch, positiv = Erzeugung).
+    // Ältere Datenbanken speicherten den Verbrauch als positiven Wert.
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&pool)
+        .await
+        .expect("Versionsprüfung");
+    if version < 1 {
+        let mut tx = pool.begin().await.expect("Migrations-Transaktion");
+        if !is_new_db {
+            sqlx::query("UPDATE buildings SET power = -power")
+                .execute(&mut *tx)
+                .await
+                .expect("Migration Energie vorzeichenbehaftet");
+        }
+        sqlx::query("PRAGMA user_version = 1")
+            .execute(&mut *tx)
+            .await
+            .expect("Version setzen");
+        tx.commit().await.expect("Migrations-Commit");
+    }
+
     let addr = std::env::var("BIND").unwrap_or_else(|_| "127.0.0.1:3000".into());
     let auth = AuthConfig::from_env(&pool).await;
     // Ohne Login hat jeder Zugreifer Adminrechte – daher nur lokal erlauben
@@ -978,6 +1086,7 @@ async fn main() {
             put(blueprints_update).delete(blueprints_delete),
         )
         .route("/unlocks/buildings/{id}", put(building_unlock))
+        .route("/unlocks/blueprints", put(blueprints_unlock_tiers))
         .route("/unlocks/blueprints/{id}", put(blueprint_unlock))
         .route("/images", get(images_list))
         .route("/plans", get(plans_list).post(plans_create))

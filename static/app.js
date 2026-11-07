@@ -3,14 +3,20 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const t = (k, o) => i18next.t(k, o);
 const fmt = (n) => (Math.round(n * 100) / 100).toLocaleString(LANGUAGES.find((l) => l.code === i18next.language)?.numbers ?? "en-US");
+// Energie: positiv = Erzeugung (grün, mit "+"), negativ = Verbrauch (rot)
+const powerHtml = (p) => {
+  const v = Math.round((p ?? 0) * 100) / 100;
+  return `<span class="${v > 0 ? "power-pos" : v < 0 ? "power-neg" : ""}">${v > 0 ? "+" : ""}${fmt(v)}</span>`;
+};
 const isUrl = (s) => /^(https?:|data:image\/|\/)/.test(s || "");
 const BUILDING_CATEGORIES = ["extraction", "manufacturing", "processing", "transport", "defense", "power"];
 
 const db = { items: [], buildings: [], blueprints: [], plans: [], manualPlans: [] };
+const tableHeaderObservers = new WeakMap();
 // Anmeldestatus (aus /api/me); ohne Login-Konfiguration ist der lokale Benutzer ein Admin
 const auth = { enabled: false, user: null };
 const isAdmin = () => !!auth.user?.is_admin;
-const view = { items: { filter: "", tier: "", sort: "tier-name" }, blueprints: { search: "", status: "" } };
+const view = { items: { filter: "", tier: "", sort: "tier-name" }, blueprints: { search: "", status: "", tierFrom: "", tierTo: "" }, flow: { unlockedOnly: true, search: "" } };
 const plan = { id: null, name: "", target: null, rate: 60, choices: {} };
 
 async function api(method, path, body) {
@@ -39,10 +45,13 @@ function toast(msg, ok = false) {
 
 async function loadAll() {
   const own = (path) => (auth.user ? api("GET", path) : []);
+  let imageFiles;
   [db.items, db.buildings, db.blueprints, db.plans, imageFiles, db.manualPlans] = await Promise.all([
     api("GET", "/items"), api("GET", "/buildings"), api("GET", "/blueprints"), own("/plans"), api("GET", "/images"), own("/manual-plans"),
   ]);
-  imageIndex = new Map(imageFiles.map((f) => [f.replace(/\.[^.]+$/, "").toLowerCase(), f]));
+  for (const kind of ["items", "buildings"]) {
+    imageIndex[kind] = new Map((imageFiles[kind] ?? []).map((f) => [f.replace(/\.[^.]+$/, "").toLowerCase(), f]));
+  }
   renderAll();
 }
 
@@ -52,22 +61,22 @@ const buildingById = (id) => db.buildings.find((b) => b.id === id);
 const bpsFor = (itemId) => db.blueprints.filter((b) => b.output_item_id === itemId && b.unlocked);
 const allBpsFor = (itemId) => db.blueprints.filter((b) => b.output_item_id === itemId);
 
-let imageFiles = [], imageIndex = new Map();
+const imageIndex = { items: new Map(), buildings: new Map() };
 
-// Priorität: explizites Icon (Emoji/URL) > Bilddatei mit dem Namen aus /images > leer
-function resolveIcon(icon, name) {
+// Priorität: explizites Icon (Emoji/URL) > Bilddatei mit dem Namen aus /images/<kind> (items | buildings) > leer
+function resolveIcon(icon, name, kind = "items") {
   if (icon) return icon;
-  const file = imageIndex.get(String(name ?? "").trim().toLowerCase());
-  return file ? "/images/" + encodeURIComponent(file) : "";
+  const file = imageIndex[kind]?.get(String(name ?? "").trim().toLowerCase());
+  return file ? `/images/${kind}/${encodeURIComponent(file)}` : "";
 }
 const blueprintIcon = (b) => resolveIcon(b.icon, b.name) || resolveIcon(itemById(b.output_item_id)?.icon, itemById(b.output_item_id)?.name);
 
-function iconHtml(icon, name) {
-  icon = resolveIcon(icon, name);
+function iconHtml(icon, name, kind) {
+  icon = resolveIcon(icon, name, kind);
   return isUrl(icon) ? `<img class="icon" src="${esc(icon)}" alt="">` : `<span class="icon">${esc(icon || "▫️")}</span>`;
 }
-function iconSvg(icon, name, x, y, size = 24) {
-  icon = resolveIcon(icon, name);
+function iconSvg(icon, name, x, y, size = 24, kind) {
+  icon = resolveIcon(icon, name, kind);
   return isUrl(icon)
     ? `<image href="${esc(icon)}" x="${x}" y="${y}" width="${size}" height="${size}"/>`
     : `<text x="${x}" y="${y + size - 4}" style="font-size:${size - 4}px">${esc(icon || "▫️")}</text>`;
@@ -199,12 +208,12 @@ function renderSummary(calc) {
   const sorted = [...bld.values()].sort((a, b) => b.count - a.count);
   const totalPower = sorted.reduce((s, e) => s + e.count * (e.b?.power ?? 0), 0);
   const bRows = sorted.map((e) =>
-    `<tr><td>${e.b ? iconHtml(e.b.icon, e.b.name) + " " + esc(e.b.name) : "<i>" + t("summary.noBuilding") + "</i>"}</td><td class="num">${e.count}</td><td class="num">${fmt(e.exact)}</td><td class="num">${fmt(e.count * (e.b?.power ?? 0))}</td><td class="num">${e.b?.temperature == null ? "–" : fmt(e.b.temperature)}</td><td>${esc(e.outputs.join(", "))}</td></tr>`).join("");
+    `<tr><td>${e.b ? iconHtml(e.b.icon, e.b.name, "buildings") + " " + esc(e.b.name) : "<i>" + t("summary.noBuilding") + "</i>"}</td><td class="num">${e.count}</td><td class="num">${fmt(e.exact)}</td><td class="num">${powerHtml(e.count * (e.b?.power ?? 0))}</td><td class="num">${e.b?.temperature == null ? "–" : fmt(e.b.temperature)}</td><td>${esc(e.outputs.join(", "))}</td></tr>`).join("");
   const rRows = res.sort((a, b) => b.demand - a.demand).map((n) =>
     `<tr><td>${iconHtml(n.item?.icon, n.item?.name)} ${esc(n.item?.name)}</td><td class="num">${fmt(n.demand)}</td></tr>`).join("");
   host.innerHTML = `<div class="cols">
     <div><h2>${t("summary.buildings")}</h2><table><tr><th>${t("summary.building")}</th><th class="num">${t("summary.count")}</th><th class="num">${t("summary.utilization")}</th><th class="num">${t("summary.power")}</th><th class="num">${t("summary.temp")}</th><th>${t("summary.produces")}</th></tr>${bRows || `<tr><td colspan="6">–</td></tr>`}
-      ${bRows ? `<tr><th>${t("summary.total")}</th><th></th><th></th><th class="num">${fmt(totalPower)}</th><th></th><th></th></tr>` : ""}</table></div>
+      ${bRows ? `<tr><th>${t("summary.total")}</th><th></th><th></th><th class="num">${powerHtml(totalPower)}</th><th></th><th></th></tr>` : ""}</table></div>
     <div><h2>${t("summary.resources")}</h2><table><tr><th>${t("summary.resource")}</th><th class="num">${t("summary.perMinute")}</th></tr>${rRows || `<tr><td colspan="2">–</td></tr>`}</table></div></div>`;
 }
 
@@ -253,6 +262,19 @@ function openDialog(title, body, onOk) {
 
 // ---------- CRUD: items & buildings ----------
 
+function stickTableHeader(host) {
+  const toolbar = $(".toolbar.sticky", host);
+  const table = $("table.sticky-head", host);
+  if (!toolbar || !table) return;
+
+  tableHeaderObservers.get(host)?.disconnect();
+  const updateOffset = () => table.style.setProperty("--sticky-toolbar-height", `${toolbar.offsetHeight}px`);
+  const observer = new ResizeObserver(updateOffset);
+  observer.observe(toolbar);
+  tableHeaderObservers.set(host, observer);
+  updateOffset();
+}
+
 function renderNamed(kind) {
   const host = $("#tab-" + kind);
   const isB = kind === "buildings";
@@ -261,7 +283,8 @@ function renderNamed(kind) {
   const sel = (val, cur) => (val === cur ? "selected" : "");
   const controls = isB ? "" : `<label>${t("item.filter")} <input id="item-filter" value="${esc(v.filter)}"></label><label>${t("item.tier")} <select id="item-tier"><option value="">${t("item.allTiers")}</option>${[...new Set(db.items.map((i) => i.tier))].sort((a, b) => a - b).map((tier) => `<option ${sel(String(tier), v.tier)}>${tier}</option>`).join("")}</select></label><label>${t("item.sort")} <select id="item-sort"><option value="tier-name" ${sel("tier-name", v.sort)}>${t("item.sortTierName")}</option><option value="name" ${sel("name", v.sort)}>${t("item.sortName")}</option><option value="tier" ${sel("tier", v.sort)}>${t("item.sortTier")}</option></select></label>`;
   host.innerHTML = `<div class="toolbar sticky">${isAdmin() ? `<button id="add-${kind}" class="active">${t("common.add", { what })}</button>` : ""}${controls}${kind === "items" && !db.items.length && isAdmin() ? `<button id="seed">${t("named.seed")}</button>` : ""}</div>
-    <table><thead><tr><th>${t("common.icon")}</th><th>${t("common.name")}</th>${isB ? `<th>${t("named.category")}</th><th>${t("bp.status")}</th><th class="num">${t("named.powerShort")}</th><th class="num">${t("named.tempShort")}</th><th class="num">${t("named.areaShort")}</th>` : `<th class="num">${t("item.tier")}</th>`}<th></th></tr></thead><tbody id="${kind}-rows"></tbody></table>`;
+    <table class="sticky-head"><thead><tr><th>${t("common.icon")}</th><th>${t("common.name")}</th>${isB ? `<th>${t("named.category")}</th><th>${t("bp.status")}</th><th class="num">${t("named.powerShort")}</th><th class="num">${t("named.tempShort")}</th><th class="num">${t("named.areaShort")}</th>` : `<th class="num">${t("item.tier")}</th>`}<th></th></tr></thead><tbody id="${kind}-rows"></tbody></table>`;
+  stickTableHeader(host);
   const renderRows = () => {
     let list = [...db[kind]];
     if (!isB) {
@@ -272,10 +295,15 @@ function renderNamed(kind) {
       list = list.filter((n) => (!filter || n.name.toLocaleLowerCase().includes(filter)) && (!tier || String(n.tier) === tier));
       list.sort((a, b) => sort === "name" ? a.name.localeCompare(b.name) : sort === "tier" ? a.tier - b.tier : a.tier - b.tier || a.name.localeCompare(b.name));
     }
-    $("#"+kind+"-rows").innerHTML = list.map((n) => `<tr${isB ? ` class="${n.unlocked ? "bp-unlocked" : "bp-locked"}"` : ""}><td>${iconHtml(n.icon, n.name)}</td><td>${esc(n.name)}</td>${isB ? `<td>${n.category ? esc(t("category." + n.category)) : "–"}</td><td class="status">${n.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${fmt(n.power)}</td><td class="num">${n.temperature == null ? "–" : fmt(n.temperature)}</td><td class="num">${[n.build_area, n.build_area2].filter(Boolean).map(esc).join(" / ") || "–"}</td>` : `<td class="num">${n.tier}</td>`}    <td>${isB && auth.user ? `<button data-toggle="${n.id}">${t(n.unlocked ? "bp.lock" : "bp.unlock")}</button> ` : ""}${isAdmin() ? `<button data-edit="${n.id}">${t("common.edit")}</button> <button class="danger" data-del="${n.id}">${t("common.delete")}</button>` : ""}</td></tr>`).join("");
+    $("#"+kind+"-rows").innerHTML = list.map((n) => `<tr${isB ? ` class="${n.unlocked ? "bp-unlocked" : "bp-locked"}"` : ""}><td>${iconHtml(n.icon, n.name, kind)}</td><td>${esc(n.name)}</td>${isB ? `<td>${n.category ? esc(t("category." + n.category)) : "–"}</td><td class="status">${n.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${powerHtml(n.power)}</td><td class="num">${n.temperature == null ? "–" : fmt(n.temperature)}</td><td class="num">${[n.build_area, n.build_area2].filter(Boolean).map(esc).join(" / ") || "–"}</td>` : `<td class="num">${n.tier}</td>`}    <td>${isB && auth.user ? `<button data-toggle="${n.id}">${t(n.unlocked ? "bp.lock" : "bp.unlock")}</button> ` : ""}${isAdmin() ? `<button data-edit="${n.id}">${t("common.edit")}</button> <button class="danger" data-del="${n.id}">${t("common.delete")}</button>` : ""}</td></tr>`).join("");
     $("#"+kind+"-rows").querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = async () => {
       const n = db.buildings.find((x) => x.id === Number(b.dataset.toggle));
-          await api("PUT", `/unlocks/buildings/${n.id}`, { unlocked: !n.unlocked });
+      const body = { unlocked: !n.unlocked };
+      if (body.unlocked) {
+        const locked = db.blueprints.filter((bp) => bp.building_id === n.id && !bp.unlocked).length;
+        if (locked && confirm(t("named.unlockBlueprints", { name: n.name, count: locked }))) body.with_blueprints = true;
+      }
+      await api("PUT", `/unlocks/buildings/${n.id}`, body);
       await loadAll();
     }));
     $("#"+kind+"-rows").querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => edit(db[kind].find((n) => n.id === Number(b.dataset.edit)))));
@@ -287,7 +315,7 @@ function renderNamed(kind) {
     (!isB ? `<label class="field"><span>${t("item.tier")}</span><input type="number" name="tier" min="0" step="1" value="${n?.tier ?? 0}"></label>` : "") +
     (isB ? `<label class="field"><span>${t("named.category")}</span><select name="category"><option value="">–</option>${BUILDING_CATEGORIES.map((c) => `<option value="${c}" ${n?.category === c ? "selected" : ""}>${t("category." + c)}</option>`).join("")}</select></label>
      <label class="field"><span>${t("bp.status")}</span><select name="unlocked"><option value="true" ${n?.unlocked !== false ? "selected" : ""}>${t("bp.unlocked")}</option><option value="false" ${n?.unlocked === false ? "selected" : ""}>${t("bp.locked")}</option></select></label>
-     <label class="field"><span>${t("named.power")}</span><input type="number" name="power" min="0" step="any" value="${n?.power ?? 0}"></label>
+     <label class="field"><span>${t("named.power")}</span><input type="number" name="power" step="any" value="${n?.power ?? 0}"></label>
      <label class="field"><span>${t("named.temperature")}</span><input type="number" name="temperature" step="any" value="${n?.temperature ?? ""}"></label>
      <label class="field"><span>${t("named.buildArea")}</span>     <input name="build_area" pattern="\s*[1-9][0-9]*\s*\*\s*[1-9][0-9]*\s*" placeholder="4*4" value="${esc(n?.build_area)}"></label>
           <label class="field"><span>${t("named.buildArea2")}</span><input name="build_area2" pattern="\s*[1-9][0-9]*\s*\*\s*[1-9][0-9]*\s*" placeholder="4*4" value="${esc(n?.build_area2)}"></label>` : ""),
@@ -303,7 +331,12 @@ function renderNamed(kind) {
         body.build_area = d.build_area.replace(/\s+/g, "") || null;
         body.build_area2 = d.build_area2.replace(/\s+/g, "") || null;
       }
-      if (n) await api("PUT", `/${kind}/${n.id}`, body); else await api("POST", `/${kind}`, body);
+      let query = "";
+      if (isB && n && !n.unlocked && body.unlocked) {
+        const locked = db.blueprints.filter((bp) => bp.building_id === n.id && !bp.unlocked).length;
+        if (locked && confirm(t("named.unlockBlueprints", { name: n.name, count: locked }))) query = "?with_blueprints=true";
+      }
+      if (n) await api("PUT", `/${kind}/${n.id}${query}`, body); else await api("POST", `/${kind}`, body);
       await loadAll();
     });
   if (isAdmin()) $("#add-" + kind).onclick = () => edit(null);
@@ -319,7 +352,7 @@ async function seedData() {
   for (const [k, icon] of [["ore", "⛏️"], ["ingot", "🧱"], ["plate", "📄"], ["rod", "📏"], ["screw", "🔩"]])
     it[k] = (await api("POST", "/items", { name: names[k], icon })).id;
   const b = {};
-  for (const [k, icon, power, temperature] of [["smelter", "🔥", 4, 1200], ["constructor", "🏗️", 4, null]])
+  for (const [k, icon, power, temperature] of [["smelter", "🔥", -4, 1200], ["constructor", "🏗️", -4, null]])
     b[k] = (await api("POST", "/buildings", { name: bnames[k], icon, power, temperature })).id;
   const bp = (name, building_id, out, amt, inputs) => api("POST", "/blueprints", { name, icon: "", building_id, output_item_id: out, output_amount: amt, inputs: inputs.map(([item_id, amount]) => ({ item_id, amount })) });
   await bp(names.ingot, b.smelter, it.ingot, 30, [[it.ore, 30]]);
@@ -337,8 +370,11 @@ function renderBlueprints() {
   const sel = (val) => (val === v.status ? "selected" : "");
   host.innerHTML = `<div class="toolbar sticky">${isAdmin() ? `<button id="add-bp" class="active">${t("common.add", { what: t("kind.blueprint") })}</button>` : ""}
     <label>${t("bp.search")} <input id="bp-search" type="search" placeholder="${esc(t("bp.searchHint"))}" value="${esc(v.search)}"></label>
-    <label>${t("bp.status")} <select id="bp-status"><option value="" ${sel("")}>${t("bp.allStatus")}</option><option value="unlocked" ${sel("unlocked")}>${t("bp.unlocked")}</option><option value="locked" ${sel("locked")}>${t("bp.locked")}</option></select></label></div>
-    <table><thead><tr><th>${t("common.icon")}</th><th>${t("common.name")}</th><th>${t("bp.status")}</th><th class="num">${t("item.tier")}</th><th>${t("bp.building")}</th><th>${t("bp.inputsShort")}</th><th>${t("bp.outputShort")}</th><th></th></tr></thead><tbody id="bp-rows"></tbody></table>`;
+    <label>${t("bp.status")} <select id="bp-status"><option value="" ${sel("")}>${t("bp.allStatus")}</option><option value="unlocked" ${sel("unlocked")}>${t("bp.unlocked")}</option><option value="locked" ${sel("locked")}>${t("bp.locked")}</option></select></label>
+    ${auth.user ? `<span class="sep"></span><label>${t("bp.tierRange")} <input id="bp-tier-from" type="number" min="0" step="1" class="tier-in" placeholder="${t("bp.tierFrom")}" value="${esc(v.tierFrom)}"> – <input id="bp-tier-to" type="number" min="0" step="1" class="tier-in" placeholder="${t("bp.tierTo")}" value="${esc(v.tierTo)}"></label>
+    <button id="bp-tier-unlock" type="button">${t("bp.unlockTier")}</button><button id="bp-tier-lock" type="button">${t("bp.lockTier")}</button>` : ""}</div>
+    <table class="sticky-head"><thead><tr><th>${t("common.icon")}</th><th>${t("common.name")}</th><th>${t("bp.status")}</th><th class="num">${t("item.tier")}</th><th>${t("bp.building")}</th><th>${t("bp.inputsShort")}</th><th>${t("bp.outputShort")}</th><th></th></tr></thead><tbody id="bp-rows"></tbody></table>`;
+  stickTableHeader(host);
 
   const renderRows = () => {
     v.search = $("#bp-search").value;
@@ -352,7 +388,7 @@ function renderBlueprints() {
     $("#bp-rows").innerHTML = list.map((b) => {
       const ins = b.inputs.map((i) => `${fmt(i.amount)}× ${esc(itemById(i.item_id)?.name)}`).join(", ") || "–";
       const bld = buildingById(b.building_id);
-      return `<tr class="${b.unlocked ? "bp-unlocked" : "bp-locked"}"><td>${iconHtml(blueprintIcon(b))}</td><td>${esc(b.name)}</td><td class="status">${b.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${tierOf(b)}</td><td>${bld ? iconHtml(bld.icon, bld.name) + " " + esc(bld.name) + (bld.unlocked ? "" : " 🔒") : "–"}</td>
+      return `<tr class="${b.unlocked ? "bp-unlocked" : "bp-locked"}"><td>${iconHtml(blueprintIcon(b))}</td><td>${esc(b.name)}</td><td class="status">${b.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${tierOf(b)}</td><td>${bld ? iconHtml(bld.icon, bld.name, "buildings") + " " + esc(bld.name) + (bld.unlocked ? "" : " 🔒") : "–"}</td>
         <td>${ins}</td><td>${fmt(b.output_amount)}× ${esc(itemById(b.output_item_id)?.name)}</td>
         <td>${auth.user ? `<button data-toggle="${b.id}">${t(b.unlocked ? "bp.lock" : "bp.unlock")}</button> ` : ""}${isAdmin() ? `<button data-edit="${b.id}">${t("common.edit")}</button> <button class="danger" data-del="${b.id}">${t("common.delete")}</button>` : ""}</td></tr>`;
     }).join("") || `<tr><td colspan="8" class="muted">${t("bp.noResults")}</td></tr>`;
@@ -372,6 +408,24 @@ function renderBlueprints() {
     }));
   };
   if (isAdmin()) $("#add-bp").onclick = () => editBlueprint(null);
+  if (auth.user) {
+    const bulk = async (unlocked) => {
+      v.tierFrom = $("#bp-tier-from").value.trim();
+      v.tierTo = $("#bp-tier-to").value.trim();
+      if (v.tierFrom === "" && v.tierTo === "") return toast(t("bp.tierMissing"));
+      const from = Number(v.tierFrom === "" ? v.tierTo : v.tierFrom), to = Number(v.tierTo === "" ? v.tierFrom : v.tierTo);
+      if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from > to) return toast(t("bp.tierInvalid"));
+      const count = db.blueprints.filter((b) => { const tier = itemById(b.output_item_id)?.tier ?? 0; return tier >= from && tier <= to; }).length;
+      if (!count) return toast(t("bp.tierNone"));
+      const range = from === to ? String(from) : `${from}–${to}`;
+      if (!confirm(t(unlocked ? "bp.unlockTierConfirm" : "bp.lockTierConfirm", { count, range }))) return;
+      const res = await api("PUT", "/unlocks/blueprints", { unlocked, tier_min: from, tier_max: to });
+      await loadAll();
+      toast(t("bp.tierDone", { changed: res.changed, skipped: res.skipped }), true);
+    };
+    $("#bp-tier-unlock").onclick = () => bulk(true);
+    $("#bp-tier-lock").onclick = () => bulk(false);
+  }
   $("#bp-search").oninput = renderRows;
   $("#bp-status").onchange = renderRows;
   renderRows();
@@ -434,6 +488,109 @@ function loadPlan() {
   renderPlanner();
 }
 
+// ---------- material flow matrix ----------
+
+// Zeilen = produzierte Items (Output), Spalten = benötigte Items (Input). Beide Achsen sind nach Produktionsstufe sortiert,
+// sodass jede Zelle unterhalb der Diagonale liegt und eine Spalte von oben nach unten dem Weg des Items durch die Kette folgt.
+function renderFlow() {
+  const host = $("#tab-flow");
+  const v = view.flow;
+  host.innerHTML = `<div class="toolbar sticky">
+    <label><input id="fl-unlocked" type="checkbox" ${v.unlockedOnly ? "checked" : ""}> ${t("flow.unlockedOnly")}</label>
+    <label>${t("flow.search")} <input id="fl-search" type="search" value="${esc(v.search)}"></label>
+    <span class="info">${t("flow.info")}</span></div><div id="fl-body"></div>`;
+
+  const draw = () => {
+    v.unlockedOnly = $("#fl-unlocked").checked;
+    v.search = $("#fl-search").value;
+    const q = v.search.trim().toLocaleLowerCase();
+    const bps = db.blueprints.filter((b) => !v.unlockedOnly || b.unlocked);
+
+    const cell = new Map(); // "out>in" -> Set(amount)
+    const outs = new Set(), ins = new Set();
+    for (const b of bps) {
+      for (const inp of b.inputs) {
+        outs.add(b.output_item_id);
+        ins.add(inp.item_id);
+        const k = b.output_item_id + ">" + inp.item_id;
+        if (!cell.has(k)) cell.set(k, new Set());
+        cell.get(k).add(inp.amount);
+      }
+    }
+
+    const inputsOf = new Map();
+    for (const b of bps) inputsOf.set(b.output_item_id, [...(inputsOf.get(b.output_item_id) ?? []), ...b.inputs.map((i) => i.item_id)]);
+    const level = new Map();
+    const levelOf = (id, stack = new Set()) => {
+      if (level.has(id)) return level.get(id);
+      if (stack.has(id)) return 0;
+      stack.add(id);
+      const l = Math.max(-1, ...(inputsOf.get(id) ?? []).map((i) => levelOf(i, stack))) + 1;
+      stack.delete(id);
+      level.set(id, l);
+      return l;
+    };
+    const order = (a, b) => levelOf(a) - levelOf(b) || (itemById(a)?.tier ?? 0) - (itemById(b)?.tier ?? 0) || String(itemById(a)?.name).localeCompare(itemById(b)?.name);
+    const rows = [...outs].filter((id) => itemById(id)).sort(order);
+    const cols = [...ins].filter((id) => itemById(id)).sort(order);
+    const matches = (id) => !q || itemById(id).name.toLocaleLowerCase().includes(q);
+    const shownRows = rows.filter(matches), shownCols = cols.filter(matches);
+
+    // Ein Input belegt das Transportnetz von seiner ersten bis zur letzten Verwendung (Zeilenindex in `rows`)
+    const span = new Map();
+    for (const c of shownCols) {
+      const used = rows.map((r, i) => (cell.has(r + ">" + c) ? i : -1)).filter((i) => i >= 0);
+      if (used.length) span.set(c, [used[0], used[used.length - 1]]);
+    }
+
+    if (!shownRows.length || !shownCols.length) {
+      $("#fl-body").innerHTML = `<p class="muted">${t("flow.empty")}</p>`;
+      return;
+    }
+    const head = shownCols.map((c, ci) => {
+      const it = itemById(c);
+      const uses = shownRows.filter((r) => cell.has(r + ">" + c)).length;
+      return `<th class="fl-col" data-c="${ci}" title="${esc(t("flow.usedBy", { count: uses }))}"><div>${iconHtml(it.icon, it.name)}<span>${esc(it.name)}</span></div></th>`;
+    }).join("");
+    const body = shownRows.map((r) => {
+      const it = itemById(r);
+      const ri = rows.indexOf(r);
+      const tds = shownCols.map((c, ci) => {
+        const amounts = cell.get(r + ">" + c);
+        const [first, last] = span.get(c) ?? [-1, -1];
+        if (amounts) {
+          const edge = ri === first ? " first" : ri === last ? " last" : "";
+          const title = `${itemById(c).name} → ${it.name}`;
+          return `<td class="fl-use${edge}" data-c="${ci}" title="${esc(title)}">${[...amounts].map(fmt).join(" / ")}</td>`;
+        }
+        return `<td class="${ri > first && ri < last ? "fl-gap" : ""}" data-c="${ci}"></td>`;
+      }).join("");
+      return `<tr data-r="${ri}"><th class="fl-row">${iconHtml(it.icon, it.name)} ${esc(it.name)}<span class="muted"> · ${t("item.tier")} ${it.tier ?? 0}</span></th>${tds}</tr>`;
+    }).join("");
+    const host$ = $("#fl-body");
+    host$.innerHTML = `<div class="flow-wrap"><table class="flow"><thead><tr><th class="fl-corner">${t("flow.corner")}</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+
+    const table = host$.querySelector("table");
+    const mark = (r, c, on) => {
+      table.querySelectorAll(`tbody tr[data-r="${r}"]`).forEach((e) => e.classList.toggle("hl", on));
+      table.querySelectorAll(`[data-c="${c}"]`).forEach((e) => e.classList.toggle("hl", on));
+    };
+    let cur = null;
+    table.onmouseover = (e) => {
+      const td = e.target.closest("td,th.fl-col,th.fl-row");
+      if (!td || !table.contains(td)) return;
+      const next = [td.parentElement.dataset.r ?? "", td.dataset.c ?? ""];
+      if (cur) mark(cur[0], cur[1], false);
+      cur = next;
+      mark(cur[0], cur[1], true);
+    };
+    table.onmouseleave = () => { if (cur) mark(cur[0], cur[1], false); cur = null; };
+  };
+  $("#fl-unlocked").onchange = draw;
+  $("#fl-search").oninput = draw;
+  draw();
+}
+
 // ---------- wiring ----------
 
 function applyStaticTexts() {
@@ -454,6 +611,7 @@ function renderAll() {
   renderBlueprints();
   renderNamed("buildings");
   renderNamed("items");
+  renderFlow();
   renderManual();
   applyAuthUi();
 }
