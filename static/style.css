@@ -29,7 +29,14 @@ tr.bp-locked td.status { color:#f08a86; font-weight:600; }
 .sep { flex:1; }
 .seg { display:flex; gap:4px; }
 .warn { color:var(--accent); }
-.graph-wrap { overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:6px; min-height:300px; }
+#tab-planner:not([hidden]) { display:flex; flex-direction:column; height:calc(100vh - 84px); overflow:hidden; }
+#tab-planner .toolbar { flex:none; }
+.graph-wrap { flex:1; min-height:0; overflow:hidden; background:var(--panel); border:1px solid var(--line); border-radius:6px; }
+.graph-wrap[hidden] { display:none; }
+.graph-wrap svg { display:block; width:100%; height:100%; outline:none; user-select:none; cursor:grab; }
+.graph-wrap svg.panning { cursor:grabbing; }
+#view-summary { flex:1; min-height:0; overflow:auto; }
+#view-summary[hidden] { display:none; }
 svg text { fill:var(--text); font-size:12px; }
 svg .muted { fill:var(--muted); }
 .node rect { fill:#27303b; stroke:var(--line); stroke-width:1.5; }
@@ -44,6 +51,19 @@ svg .alt-badge { fill:#b07cf5; font-size:16px; font-weight:700; }
 .node:hover rect { stroke:var(--accent); }
 .edge { fill:none; stroke:#5b6678; stroke-width:1.5; }
 .edge-label { font-size:11px; paint-order:stroke; stroke:var(--panel); stroke-width:4px; }
+.pport { stroke:#111; stroke-width:1.5; }
+.pport.in, .port-hl.in { fill:#4aa3df; }
+.pport.out, .port-hl.out { fill:#6fcf8f; }
+.hl .node:not(.linked-in):not(.linked-out):not(:hover) { opacity:.35; }
+.hl .edge, .hl .edge-label { opacity:.12; }
+.node.linked-in rect { stroke:#4aa3df; stroke-width:3; }
+.node.linked-out rect { stroke:#6fcf8f; stroke-width:3; }
+#p-hl { pointer-events:none; }
+.edge-hl { fill:none; stroke-width:3.5; }
+.edge-hl.in { stroke:#4aa3df; }
+.edge-hl.out { stroke:#6fcf8f; }
+.edge-label.hl { font-weight:700; stroke-width:5px; }
+.port-hl { stroke:#111; stroke-width:1.5; }
 table { border-collapse:collapse; background:var(--panel); min-width:480px; }
 th, td { padding:6px 12px; border-bottom:1px solid var(--line); text-align:left; }
 td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }

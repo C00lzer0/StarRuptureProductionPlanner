@@ -145,11 +145,42 @@ function calculate() {
 
 // ---------- planner rendering ----------
 
-const NW = 220, NH = 74, GX = 100, GY = 24, PAD = 20;
+const NW = 220, NH = 74, GX = 100, GY = 24, PAD = 20, PGRID = 40;
+const pv = { x: 0, y: 0, k: 1, key: null, fitted: false, moved: false, drag: null, geo: null, hover: null };
+
+function pEdgeGeom(e) {
+  const a = pv.geo.pos.get(e.from), b = pv.geo.pos.get(e.to);
+  const x1 = a.x + NW, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y + NH / 2, mx = (x1 + x2) / 2;
+  return { x1, y1, x2, y2, mx, d: `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}`, ly: (y1 + y2) / 2 - 4 };
+}
+
+function pApplyView() {
+  const svg = $("#p-svg");
+  $("#p-view")?.setAttribute("transform", `translate(${pv.x} ${pv.y}) scale(${pv.k})`);
+  for (const id of ["p-grid", "p-grid5"]) {
+    const p = svg.querySelector("#" + id);
+    if (!p) continue;
+    p.setAttribute("patternTransform", `translate(${pv.x} ${pv.y}) scale(${pv.k})`);
+    p.firstElementChild.setAttribute("stroke-width", (id === "p-grid" ? 1 : 1.5) / pv.k);
+  }
+}
+
+// Passt den ganzen Graphen in die sichtbare Fläche; ist der Tab gerade verborgen, wird später nachgeholt
+function pFit() {
+  const r = $("#p-svg").getBoundingClientRect();
+  if (!pv.geo || !r.width || !r.height) { pv.fitted = false; return; }
+  const k = Math.min(1, (r.width - 2 * PAD) / pv.geo.W, (r.height - 2 * PAD) / pv.geo.H);
+  pv.k = Math.max(0.2, k);
+  pv.x = (r.width - pv.geo.W * pv.k) / 2;
+  pv.y = Math.max(PAD, (r.height - pv.geo.H * pv.k) / 2);
+  pv.fitted = true;
+  pApplyView();
+}
 
 function renderGraph(calc) {
-  const host = $("#view-graph");
-  if (!calc.nodes.size) { host.innerHTML = `<p style="padding:16px" class="muted">${t("planner.chooseTarget")}</p>`; return; }
+  const svg = $("#p-svg");
+  pv.hover = null;
+  if (!calc.nodes.size) { pv.geo = null; svg.innerHTML = `<text x="16" y="28" class="muted">${t("planner.chooseTarget")}</text>`; return; }
   const cols = new Map();
   for (const n of calc.nodes.values()) {
     if (!cols.has(n.depth)) cols.set(n.depth, []);
@@ -164,30 +195,103 @@ function renderGraph(calc) {
     const colH = list.length * NH + (list.length - 1) * GY;
     list.forEach((n, i) => pos.set(n.id, { x: PAD + (maxDepth - d) * (NW + GX), y: PAD + (H - PAD * 2 - colH) / 2 + i * (NH + GY) }));
   }
-  let svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5b6678"/></marker></defs>`;
+  pv.geo = { pos, edges: calc.edges, W, H };
+  const hasIn = new Set(calc.edges.map((e) => e.to)), hasOut = new Set(calc.edges.map((e) => e.from));
+  const arrow = (id, color) => `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker>`;
+  let s = `<defs>${arrow("arr", "#5b6678")}${arrow("arr-in", "#4aa3df")}${arrow("arr-out", "#6fcf8f")}
+    <pattern id="p-grid" width="${PGRID}" height="${PGRID}" patternUnits="userSpaceOnUse"><path d="M${PGRID} 0H0V${PGRID}" fill="none" stroke="#313946"/></pattern>
+    <pattern id="p-grid5" width="${PGRID * 5}" height="${PGRID * 5}" patternUnits="userSpaceOnUse"><path d="M${PGRID * 5} 0H0V${PGRID * 5}" fill="none" stroke="#4a5568"/></pattern></defs>
+    <rect width="100%" height="100%" fill="url(#p-grid)"/><rect width="100%" height="100%" fill="url(#p-grid5)"/><g id="p-view"><g>`;
   for (const e of calc.edges) {
-    const a = pos.get(e.from), b = pos.get(e.to);
-    const x1 = a.x + NW, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y + NH / 2, mx = (x1 + x2) / 2;
-    svg += `<path class="edge" marker-end="url(#arr)" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}"/>`;
-    svg += `<text class="edge-label" x="${mx}" y="${(y1 + y2) / 2 - 4}" text-anchor="middle">${t("graph.perMin", { amount: fmt(e.amount) })}</text>`;
+    const g = pEdgeGeom(e);
+    s += `<path class="edge" marker-end="url(#arr)" d="${g.d}"/>`;
+    s += `<text class="edge-label" x="${g.mx}" y="${g.ly}" text-anchor="middle">${t("graph.perMin", { amount: fmt(e.amount) })}</text>`;
   }
+  s += "</g><g>";
   for (const n of calc.nodes.values()) {
     const p = pos.get(n.id);
     const b = n.bp && buildingById(n.bp.building_id);
     const options = bpsFor(n.id).length;
     const hasAlternative = options > 1 || (!n.bp && options > 0);
     const cls = "node" + (n.bp ? "" : " raw") + (n.id === plan.target ? " target" : "") + (hasAlternative ? " alt" : "");
-    const line2 = n.bp ? `${Math.ceil(n.machines - 1e-9)}× ${    esc(b?.name ?? t("graph.noBuilding"))} (${fmt(n.machines)})` : t("graph.resource");
-        svg += `<g class="${cls}" data-item="${n.id}" transform="translate(${p.x},${p.y})"><title>${esc(t("graph.clickHint"))}</title>
+    const line2 = n.bp ? `${Math.ceil(n.machines - 1e-9)}× ${esc(b?.name ?? t("graph.noBuilding"))} (${fmt(n.machines)})` : t("graph.resource");
+    s += `<g class="${cls}" data-item="${n.id}" transform="translate(${p.x},${p.y})"><title>${esc(t("graph.clickHint"))}</title>
       <rect width="${NW}" height="${NH}" rx="8"/>
       ${iconSvg(n.item?.icon, n.item?.name, 10, 10, 28)}
       <text x="46" y="28" style="font-weight:600;font-size:13px">${esc(n.item?.name)}</text>
       <text x="46" y="46" class="muted">${t("graph.perMinSpaced", { amount: fmt(n.demand) })}</text>
-            <text x="10" y="64" class="muted">${line2}</text>
-      ${n.bp ? `<text x="${NW - 10}" y="28" text-anchor="end" class="muted">${esc(n.bp.name)}</text>` : ""}${hasAlternative ? `<text class="alt-badge" x="${NW - 10}" y="64" text-anchor="end">⇄</text>` : ""}</g>`;
+      <text x="10" y="64" class="muted">${line2}</text>
+      ${n.bp ? `<text x="${NW - 10}" y="28" text-anchor="end" class="muted">${esc(n.bp.name)}</text>` : ""}${hasAlternative ? `<text class="alt-badge" x="${NW - 10}" y="64" text-anchor="end">⇄</text>` : ""}
+      ${hasIn.has(n.id) ? `<circle class="pport in" cx="0" cy="${NH / 2}" r="5"/>` : ""}${hasOut.has(n.id) ? `<circle class="pport out" cx="${NW}" cy="${NH / 2}" r="5"/>` : ""}</g>`;
   }
-  host.innerHTML = svg + "</svg>";
-  host.querySelectorAll(".node").forEach((g) => (g.onclick = () => chooseBlueprint(Number(g.dataset.item))));
+  svg.innerHTML = s + `</g><g id="p-hl"></g></g>`;
+  if (!pv.fitted || pv.key !== plan.target) { pv.key = plan.target; pFit(); } else pApplyView();
+}
+
+// Hebt beim Überfahren einer Node deren Ein- (blau) und Ausgänge (grün) hervor und zeichnet sie über alle anderen Nodes
+function pHighlight(id) {
+  if (pv.hover === id) return;
+  pv.hover = id;
+  const svg = $("#p-svg"), hl = $("#p-hl");
+  if (!hl || !pv.geo) return;
+  svg.querySelectorAll(".linked-in, .linked-out").forEach((el) => el.classList.remove("linked-in", "linked-out"));
+  svg.classList.toggle("hl", id != null);
+  hl.innerHTML = "";
+  if (id == null) return;
+  let s = "";
+  for (const e of pv.geo.edges) {
+    const isIn = e.to === id;
+    if (!isIn && e.from !== id) continue;
+    const cls = isIn ? "in" : "out";
+    svg.querySelector(`.node[data-item="${isIn ? e.from : e.to}"]`)?.classList.add(isIn ? "linked-in" : "linked-out");
+    const g = pEdgeGeom(e);
+    s += `<path class="edge-hl ${cls}" marker-end="url(#arr-${cls})" d="${g.d}"/>
+      <circle class="port-hl ${cls}" cx="${g.x1}" cy="${g.y1}" r="6"/><circle class="port-hl ${cls}" cx="${g.x2}" cy="${g.y2}" r="6"/>
+      <text class="edge-label hl" x="${g.mx}" y="${g.ly}" text-anchor="middle">${t("graph.perMin", { amount: fmt(e.amount) })}</text>`;
+  }
+  hl.innerHTML = s;
+}
+
+function pInit() {
+  const svg = $("#p-svg");
+  svg.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    pv.drag = { sx: e.clientX, sy: e.clientY, vx: pv.x, vy: pv.y };
+    pv.moved = false;
+    if (e.button === 1) e.preventDefault();
+  });
+  window.addEventListener("mousemove", (e) => {
+    const d = pv.drag;
+    if (!d) return;
+    if (!pv.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
+    pv.moved = true;
+    svg.classList.add("panning");
+    pv.x = d.vx + e.clientX - d.sx;
+    pv.y = d.vy + e.clientY - d.sy;
+    pApplyView();
+  });
+  window.addEventListener("mouseup", () => { pv.drag = null; svg.classList.remove("panning"); });
+  svg.addEventListener("click", (e) => {
+    if (pv.moved) { pv.moved = false; return; }
+    const node = e.target.closest(".node");
+    if (node) chooseBlueprint(Number(node.dataset.item));
+  });
+  svg.addEventListener("mouseover", (e) => {
+    const node = e.target.closest(".node");
+    pHighlight(node ? Number(node.dataset.item) : null);
+  });
+  svg.addEventListener("mouseleave", () => pHighlight(null));
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = svg.getBoundingClientRect();
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const k = Math.min(4, Math.max(0.2, pv.k * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+    pv.x = px - ((px - pv.x) / pv.k) * k;
+    pv.y = py - ((py - pv.y) / pv.k) * k;
+    pv.k = k;
+    pApplyView();
+  }, { passive: false });
+  $("#p-center").onclick = pFit;
 }
 
 function renderSummary(calc) {
@@ -640,12 +744,15 @@ function applyAuthUi() {
 document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => {
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   document.querySelectorAll("main > section").forEach((s) => (s.hidden = s.id !== "tab-" + b.dataset.tab));
+  if (!pv.fitted) pFit();
 }));
 document.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => {
   document.querySelectorAll(".seg button").forEach((x) => x.classList.toggle("active", x === b));
   $("#view-graph").hidden = b.dataset.view !== "graph";
   $("#view-summary").hidden = b.dataset.view !== "summary";
+  if (!pv.fitted) pFit();
 }));
+pInit();
 $("#p-target").onchange = (e) => { plan.target = Number(e.target.value); renderPlanner(); };
 $("#p-rate-reset").onclick = () => {
   const amount = chosenBlueprint(plan.target, new Set())?.output_amount;
