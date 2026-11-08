@@ -594,8 +594,8 @@ function loadPlan() {
 
 // ---------- material flow matrix ----------
 
-// Zeilen = produzierte Items (Output), Spalten = benötigte Items (Input). Beide Achsen sind nach Produktionsstufe sortiert,
-// sodass jede Zelle unterhalb der Diagonale liegt und eine Spalte von oben nach unten dem Weg des Items durch die Kette folgt.
+// Zeilen = produzierte Items (Output), Spalten = benötigte Items (Input). Zeilen sind nach Tier, dann nach Produktionsstufe sortiert,
+// Spalten nach Produktionsstufe, sodass eine Spalte von oben nach unten dem Weg des Items durch die Kette folgt.
 function renderFlow() {
   const host = $("#tab-flow");
   const v = view.flow;
@@ -635,7 +635,8 @@ function renderFlow() {
       return l;
     };
     const order = (a, b) => levelOf(a) - levelOf(b) || (itemById(a)?.tier ?? 0) - (itemById(b)?.tier ?? 0) || String(itemById(a)?.name).localeCompare(itemById(b)?.name);
-    const rows = [...outs].filter((id) => itemById(id)).sort(order);
+    const rowOrder = (a, b) => (itemById(a)?.tier ?? 0) - (itemById(b)?.tier ?? 0) || order(a, b);
+    const rows = [...outs].filter((id) => itemById(id)).sort(rowOrder);
     const cols = [...ins].filter((id) => itemById(id)).sort(order);
     const matches = (id) => !q || itemById(id).name.toLocaleLowerCase().includes(q);
     const shownRows = rows.filter(matches), shownCols = cols.filter(matches);
