@@ -47,6 +47,7 @@ svg .muted { fill:var(--muted); }
 svg .alt-badge { fill:#b07cf5; font-size:16px; font-weight:700; }
 .info { color:var(--muted); }
 .info::before { content:"ℹ️ "; }
+.flow-info { flex:1 1 320px; white-space:pre-line; font-size:12px; }
 .node { cursor:pointer; }
 .node:hover rect { stroke:var(--accent); }
 .edge { fill:none; stroke:#5b6678; stroke-width:1.5; }
@@ -115,7 +116,7 @@ dialog::backdrop { background:#0008; }
 #toast { position:fixed; right:16px; bottom:16px; background:var(--danger); padding:10px 16px; border-radius:6px; z-index:10; }
 #toast.ok { background:#3c8d57; }
 
-.flow-wrap { overflow:auto; max-height:calc(100vh - 190px); border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+.flow-wrap { overflow:auto; max-height:calc(100vh - 260px); border:1px solid var(--line); border-radius:6px; background:var(--panel); }
 table.flow { min-width:0; border-collapse:separate; border-spacing:0; font-size:12px; }
 table.flow th, table.flow td { padding:2px 4px; border-bottom:1px solid var(--line); border-right:1px solid var(--line); text-align:center; min-width:34px; }
 table.flow .fl-corner, table.flow .fl-row { position:sticky; left:0; z-index:2; background:var(--panel); text-align:left; white-space:nowrap; min-width:220px; }
@@ -128,7 +129,7 @@ td.fl-use { white-space:nowrap; background:#f5a62333; color:var(--accent); font-
 td.fl-use.first { box-shadow:inset 0 3px 0 #4aa3df; }
 td.fl-use.last { box-shadow:inset 0 -3px 0 #6fcf8f; }
 td.fl-gap { background:#4aa3df14; }
-table.flow tr.hl > td, table.flow tr.hl > th.fl-row { background-color:#ffffff10; }
-table.flow td.hl, table.flow th.fl-col.hl { background-color:#ffffff10; }
-table.flow td.fl-use.hl { background:#f5a62366; }input.tier-in { width:70px; }
-table.flow tr.hl > th.fl-row, table.flow th.fl-col.hl { background-color:var(--panel); background-image:linear-gradient(#ffffff10, #ffffff10); }input.tier-in { width:70px; }
+table.flow tr.hl > td, table.flow tr.hl > th.fl-row, table.flow tr.pin > td, table.flow tr.pin > th.fl-row { background-color:#ffffff10; }
+table.flow td.hl, table.flow th.fl-col.hl, table.flow td.pin, table.flow th.fl-col.pin { background-color:#ffffff10; }
+table.flow td.fl-use.hl, table.flow td.fl-use.pin { background:#f5a62366; }input.tier-in { width:70px; }
+table.flow tr.hl > th.fl-row, table.flow th.fl-col.hl, table.flow tr.pin > th.fl-row, table.flow th.fl-col.pin { background-color:var(--panel); background-image:linear-gradient(#ffffff10, #ffffff10); }input.tier-in { width:70px; }

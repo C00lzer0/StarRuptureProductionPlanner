@@ -594,15 +594,15 @@ function loadPlan() {
 
 // ---------- material flow matrix ----------
 
-// Zeilen = produzierte Items (Output), Spalten = benötigte Items (Input). Zeilen sind nach Tier, dann nach Produktionsstufe sortiert,
-// Spalten nach Produktionsstufe, sodass eine Spalte von oben nach unten dem Weg des Items durch die Kette folgt.
+// Zeilen = produzierte Items (Output), Spalten = benötigte Items (Input). Zeilen und Spalten sind gleich sortiert: nach Tier und Name,
+// wobei ein Item (laut Blueprints) immer erst nach seinen Inputs steht.
 function renderFlow() {
   const host = $("#tab-flow");
   const v = view.flow;
   host.innerHTML = `<div class="toolbar sticky">
     <label><input id="fl-unlocked" type="checkbox" ${v.unlockedOnly ? "checked" : ""}> ${t("flow.unlockedOnly")}</label>
     <label>${t("flow.search")} <input id="fl-search" type="search" value="${esc(v.search)}"></label>
-    <span class="info">${t("flow.info")}</span></div><div id="fl-body"></div>`;
+    <span class="info flow-info">${t("flow.info")}</span></div><div id="fl-body"></div>`;
 
   const draw = () => {
     v.unlockedOnly = $("#fl-unlocked").checked;
@@ -612,7 +612,10 @@ function renderFlow() {
 
     const cell = new Map(); // "out>in" -> Set(amount)
     const outs = new Set(), ins = new Set();
+    const outAmounts = new Map(); // out -> Set(Ausgabemenge)
     for (const b of bps) {
+      if (!outAmounts.has(b.output_item_id)) outAmounts.set(b.output_item_id, new Set());
+      outAmounts.get(b.output_item_id).add(b.output_amount);
       for (const inp of b.inputs) {
         outs.add(b.output_item_id);
         ins.add(inp.item_id);
@@ -622,21 +625,29 @@ function renderFlow() {
       }
     }
 
+    // Für die Abhängigkeiten zählen nur Blueprints ohne "v2"-Gebäude
+    // (unabhängig vom Freischalt-Filter); nur Items ohne solchen Blueprint nutzen ersatzweise die übrigen.
+    const isUpgrade = (b) => /\bv([2-9]|\d{2,})\b/i.test(buildingById(b.building_id)?.name ?? "");
+    const baseBps = db.blueprints.filter((b) => !isUpgrade(b));
+    const hasBase = new Set(baseBps.map((b) => b.output_item_id));
     const inputsOf = new Map();
-    for (const b of bps) inputsOf.set(b.output_item_id, [...(inputsOf.get(b.output_item_id) ?? []), ...b.inputs.map((i) => i.item_id)]);
-    const level = new Map();
-    const levelOf = (id, stack = new Set()) => {
-      if (level.has(id)) return level.get(id);
-      if (stack.has(id)) return 0;
+    for (const b of db.blueprints) {
+      if (isUpgrade(b) && hasBase.has(b.output_item_id)) continue;
+      inputsOf.set(b.output_item_id, [...(inputsOf.get(b.output_item_id) ?? []), ...b.inputs.map((i) => i.item_id)]);
+    }
+    const byTier = (a, b) => (itemById(a)?.tier ?? 0) - (itemById(b)?.tier ?? 0) || String(itemById(a)?.name).localeCompare(itemById(b)?.name);
+    // Grundreihenfolge: Tier, dann Name. Vor jedem Item werden jedoch zuerst seine (noch nicht eingereihten) Inputs eingereiht.
+    const pos = new Map();
+    const place = (id, stack = new Set()) => {
+      if (pos.has(id) || stack.has(id)) return;
       stack.add(id);
-      const l = Math.max(-1, ...(inputsOf.get(id) ?? []).map((i) => levelOf(i, stack))) + 1;
+      [...new Set(inputsOf.get(id) ?? [])].sort(byTier).forEach((i) => place(i, stack));
       stack.delete(id);
-      level.set(id, l);
-      return l;
+      pos.set(id, pos.size);
     };
-    const order = (a, b) => levelOf(a) - levelOf(b) || (itemById(a)?.tier ?? 0) - (itemById(b)?.tier ?? 0) || String(itemById(a)?.name).localeCompare(itemById(b)?.name);
-    const rowOrder = (a, b) => (itemById(a)?.tier ?? 0) - (itemById(b)?.tier ?? 0) || order(a, b);
-    const rows = [...outs].filter((id) => itemById(id)).sort(rowOrder);
+    [...new Set([...outs, ...ins])].filter((id) => itemById(id)).sort(byTier).forEach((id) => place(id));
+    const order = (a, b) => (pos.get(a) ?? 0) - (pos.get(b) ?? 0);
+    const rows = [...outs].filter((id) => itemById(id)).sort(order);
     const cols = [...ins].filter((id) => itemById(id)).sort(order);
     const matches = (id) => !q || itemById(id).name.toLocaleLowerCase().includes(q);
     const shownRows = rows.filter(matches), shownCols = cols.filter(matches);
@@ -670,16 +681,19 @@ function renderFlow() {
         }
         return `<td class="${ri > first && ri < last ? "fl-gap" : ""}" data-c="${ci}"></td>`;
       }).join("");
-      return `<tr data-r="${ri}"><th class="fl-row">${iconHtml(it.icon, it.name)} ${esc(it.name)}<span class="muted"> · ${t("item.tier")} ${it.tier ?? 0}</span></th>${tds}</tr>`;
+      return `<tr data-r="${ri}"><th class="fl-row">${iconHtml(it.icon, it.name)} ${esc(it.name)}<span class="muted"> · ${t("item.tier")} ${it.tier ?? 0}</span><span class="muted"> · ${[...(outAmounts.get(r) ?? [])].map(fmt).join(" / ")}×</span></th>${tds}</tr>`;
     }).join("");
     const host$ = $("#fl-body");
     host$.innerHTML = `<div class="flow-wrap"><table class="flow"><thead><tr><th class="fl-corner">${t("flow.corner")}</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 
     const table = host$.querySelector("table");
-    const mark = (r, c, on) => {
-      table.querySelectorAll(`tbody tr[data-r="${r}"]`).forEach((e) => e.classList.toggle("hl", on));
-      table.querySelectorAll(`[data-c="${c}"]`).forEach((e) => e.classList.toggle("hl", on));
+    const mark = (r, c, on, cls = "hl") => {
+      table.querySelectorAll(`tbody tr[data-r="${r}"]`).forEach((e) => e.classList.toggle(cls, on));
+      table.querySelectorAll(`[data-c="${c}"]`).forEach((e) => e.classList.toggle(cls, on));
     };
+    // Angeklickte Zeile/Spalte bleibt hervorgehoben (als Item-IDs gemerkt, damit sie ein Neuzeichnen überdauert)
+    const pinIdx = () => [v.pin?.r != null ? rows.indexOf(v.pin.r) : "", v.pin?.c != null ? shownCols.indexOf(v.pin.c) : ""];
+    mark(...pinIdx(), true, "pin");
     let cur = null;
     table.onmouseover = (e) => {
       const td = e.target.closest("td,th.fl-col,th.fl-row");
@@ -690,6 +704,15 @@ function renderFlow() {
       mark(cur[0], cur[1], true);
     };
     table.onmouseleave = () => { if (cur) mark(cur[0], cur[1], false); cur = null; };
+    table.onclick = (e) => {
+      const td = e.target.closest("td,th.fl-col,th.fl-row");
+      if (!td || !table.contains(td)) return;
+      const r = td.parentElement.dataset.r, c = td.dataset.c;
+      const next = { r: r != null ? rows[Number(r)] : null, c: c != null ? shownCols[Number(c)] : null };
+      mark(...pinIdx(), false, "pin");
+      v.pin = v.pin && v.pin.r === next.r && v.pin.c === next.c ? null : next;
+      mark(...pinIdx(), true, "pin");
+    };
   };
   $("#fl-unlocked").onchange = draw;
   $("#fl-search").oninput = draw;
