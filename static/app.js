@@ -204,6 +204,7 @@ function renderGraph(calc) {
   const hasIn = new Set(calc.edges.map((e) => e.to)), hasOut = new Set(calc.edges.map((e) => e.from));
   const arrow = (id, color) => `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker>`;
   let s = `<defs>${arrow("arr", "#5b6678")}${arrow("arr-in", "#4aa3df")}${arrow("arr-out", "#6fcf8f")}
+    <clipPath id="p-title-clip"><rect x="46" y="0" width="${NW - 56}" height="40"/></clipPath>
     <pattern id="p-grid" width="${PGRID}" height="${PGRID}" patternUnits="userSpaceOnUse"><path d="M${PGRID} 0H0V${PGRID}" fill="none" stroke="#313946"/></pattern>
     <pattern id="p-grid5" width="${PGRID * 5}" height="${PGRID * 5}" patternUnits="userSpaceOnUse"><path d="M${PGRID * 5} 0H0V${PGRID * 5}" fill="none" stroke="#4a5568"/></pattern></defs>
     <rect width="100%" height="100%" fill="url(#p-grid)"/><rect width="100%" height="100%" fill="url(#p-grid5)"/><g id="p-view"><g>`;
@@ -220,17 +221,29 @@ function renderGraph(calc) {
     const hasAlternative = options > 1 || (!n.bp && options > 0);
     const cls = "node" + (n.bp ? "" : " raw") + (n.id === plan.target ? " target" : "") + (hasAlternative ? " alt" : "");
     const line2 = n.bp ? `${Math.ceil(n.machines - 1e-9)}× ${esc(b?.name ?? t("graph.noBuilding"))} (${fmt(n.machines)})` : t("graph.resource");
+    const title = n.bp?.name ?? n.item?.name;
     s += `<g class="${cls}" data-item="${n.id}" transform="translate(${p.x},${p.y})"><title>${esc(t("graph.clickHint"))}</title>
       <rect width="${NW}" height="${NH}" rx="8"/>
       ${iconSvg(n.item?.icon, n.item?.name, 10, 10, 28)}
-      <text x="46" y="28" style="font-weight:600;font-size:13px">${esc(n.item?.name)}</text>
+      <text x="46" y="28" class="ntitle" clip-path="url(#p-title-clip)" style="font-weight:600;font-size:13px"><title>${esc(title)}</title>${esc(title)}</text>
       <text x="46" y="46" class="muted">${t("graph.perMinSpaced", { amount: fmt(n.demand) })}</text>
       <text x="10" y="64" class="muted">${line2}</text>
-      ${n.bp ? `<text x="${NW - 10}" y="28" text-anchor="end" class="muted">${esc(n.bp.name)}</text>` : ""}${hasAlternative ? `<text class="alt-badge" x="${NW - 10}" y="64" text-anchor="end">⇄</text>` : ""}
+      ${hasAlternative ? `<text class="alt-badge" x="${NW - 10}" y="64" text-anchor="end">⇄</text>` : ""}
       ${hasIn.has(n.id) ? `<circle class="pport in" cx="0" cy="${NH / 2}" r="5"/>` : ""}${hasOut.has(n.id) ? `<circle class="pport out" cx="${NW}" cy="${NH / 2}" r="5"/>` : ""}</g>`;
   }
   svg.innerHTML = s + `</g><g id="p-hl"></g></g>`;
+  pFitTitles();
   if (!pv.fitted || pv.key !== plan.target) { pv.key = plan.target; pFit(); } else pApplyView();
+}
+
+// Zu lange Titel (Blueprint-Namen) auf die verfügbare Breite stauchen; im versteckten Tab nicht messbar
+function pFitTitles() {
+  $("#p-svg").querySelectorAll(".ntitle:not([textLength])").forEach((el) => {
+    if (el.getComputedTextLength() > NW - 56) {
+      el.setAttribute("textLength", NW - 56);
+      el.setAttribute("lengthAdjust", "spacingAndGlyphs");
+    }
+  });
 }
 
 // Hebt beim Überfahren einer Node deren Ein- (blau) und Ausgänge (grün) hervor und zeichnet sie über alle anderen Nodes
@@ -774,12 +787,14 @@ document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => {
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   document.querySelectorAll("main > section").forEach((s) => (s.hidden = s.id !== "tab-" + b.dataset.tab));
   if (!pv.fitted) pFit();
+  pFitTitles();
 }));
 document.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => {
   document.querySelectorAll(".seg button").forEach((x) => x.classList.toggle("active", x === b));
   $("#view-graph").hidden = b.dataset.view !== "graph";
   $("#view-summary").hidden = b.dataset.view !== "summary";
   if (!pv.fitted) pFit();
+  pFitTitles();
 }));
 pInit();
 $("#p-target").onchange = (e) => { plan.target = Number(e.target.value); renderPlanner(); };
