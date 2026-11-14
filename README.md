@@ -66,11 +66,18 @@ Für den öffentlichen Betrieb eine [GitHub-OAuth-App](https://github.com/settin
 ```text
 src/main.rs         Backend (REST-API unter /api, Schema, Migrationen)
 src/auth.rs         GitHub-Login, Sessions, Zugriffsrechte
-static/             Frontend (index.html, app.js, locales.js, style.css)
+static/             Frontend (index.html, app.js, offline-api.js, locales.js, style.css)
 images/             Item- und Gebäude-Icons
 seed.sql            Basisdaten (Items, Gebäude, Blueprints) für neue Datenbanken
 productionplanner.db  SQLite-Datenbank
+scripts/build-pages.mjs  Baut die statische Variante für GitHub Pages (dist/)
 ```
+
+### GitHub Pages (ohne Backend)
+
+Die App läuft zusätzlich als rein statische Seite: Beim Start lädt der Browser `seed.sql` in eine SQLite-Datenbank im Arbeitsspeicher ([sql.js](https://github.com/sql-js/sql.js), `static/offline-api.js` ersetzt die REST-API). Pläne, manuelle Pläne und Freischaltungen werden lokal im Browser (`localStorage`) gespeichert – Cookies wären mit ca. 4 KB zu klein. Die Daten gelten pro Browser und gehen beim Löschen der Websitedaten verloren. Stammdaten (Items, Gebäude, Blueprints) sind dort schreibgeschützt; Login und Adminfunktionen entfallen.
+
+Einrichtung: In den Repository-Einstellungen unter *Pages* als Quelle „GitHub Actions“ wählen. Der Workflow `.github/workflows/pages.yml` veröffentlicht bei jedem Push auf `master`/`main`. Lokal testen: `node scripts/build-pages.mjs` und `dist/` mit einem beliebigen statischen Webserver ausliefern.
 
 ---
 
@@ -136,8 +143,15 @@ For public hosting, create a [GitHub OAuth app](https://github.com/settings/deve
 ```text
 src/main.rs         Backend (REST API under /api, schema, migrations)
 src/auth.rs         GitHub login, sessions, access rights
-static/             Frontend (index.html, app.js, locales.js, style.css)
+static/             Frontend (index.html, app.js, offline-api.js, locales.js, style.css)
 images/             Item and building icons
 seed.sql            Base data (items, buildings, blueprints) for new databases
 productionplanner.db  SQLite database
+scripts/build-pages.mjs  Builds the static GitHub Pages version (dist/)
 ```
+
+### GitHub Pages (no backend)
+
+The app also runs as a purely static site: on startup the browser loads `seed.sql` into an in-memory SQLite database ([sql.js](https://github.com/sql-js/sql.js); `static/offline-api.js` replaces the REST API). Plans, manual plans and unlock states are stored locally in the browser (`localStorage`) – cookies are limited to about 4 KB, which is too small. Data is per browser and is lost when site data is cleared. Master data (items, buildings, blueprints) is read-only there; login and admin features are not available.
+
+Setup: in the repository settings under *Pages*, select "GitHub Actions" as the source. The workflow `.github/workflows/pages.yml` publishes on every push to `master`/`main`. To test locally, run `node scripts/build-pages.mjs` and serve `dist/` with any static web server.

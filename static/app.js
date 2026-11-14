@@ -8,7 +8,7 @@ const powerHtml = (p) => {
   const v = Math.round((p ?? 0) * 100) / 100;
   return `<span class="${v > 0 ? "power-pos" : v < 0 ? "power-neg" : ""}">${v > 0 ? "+" : ""}${fmt(v)}</span>`;
 };
-const isUrl = (s) => /^(https?:|data:image\/|\/)/.test(s || "");
+const isUrl = (s) => /^(https?:|data:image\/|images\/|\/)/.test(s || "");
 const BUILDING_CATEGORIES = ["extraction", "manufacturing", "processing", "transport", "defense", "power"];
 
 const db = { items: [], buildings: [], blueprints: [], plans: [], manualPlans: [] };
@@ -19,12 +19,17 @@ const isAdmin = () => !!auth.user?.is_admin;
 const view = { items: { filter: "", tier: "", sort: "tier-name" }, blueprints: { search: "", status: "", tierFrom: "", tierTo: "" }, flow: { unlockedOnly: true, search: "" } };
 const plan = { id: null, name: "", target: null, rate: 60, choices: {} };
 
+// Statischer Modus (GitHub Pages): kein Backend, siehe offline-api.js
+const STATIC_MODE = !!window.APP_CONFIG?.staticMode;
+
 async function api(method, path, body) {
-  const res = await fetch("/api" + path, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const res = STATIC_MODE
+    ? await Offline.fetchApi(method, path, body)
+    : await fetch("/api" + path, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
   if (!res.ok) {
     const msg = res.status === 409 ? t("err.conflict") : res.status === 400 ? t("err.invalid") : res.status === 401 ? t("err.loginRequired") : res.status === 403 ? t("err.forbidden") : await res.text();
     toast(msg || res.statusText);
@@ -67,7 +72,7 @@ const imageIndex = { items: new Map(), buildings: new Map() };
 function resolveIcon(icon, name, kind = "items") {
   if (icon) return icon;
   const file = imageIndex[kind]?.get(String(name ?? "").trim().toLowerCase());
-  return file ? `/images/${kind}/${encodeURIComponent(file)}` : "";
+  return file ? `images/${kind}/${encodeURIComponent(file)}` : "";
 }
 const blueprintIcon = (b) => resolveIcon(b.icon, b.name) || resolveIcon(itemById(b.output_item_id)?.icon, itemById(b.output_item_id)?.name);
 
@@ -812,8 +817,11 @@ async function init() {
   await i18next.init({ lng: lang, fallbackLng: "en", supportedLngs: LANGUAGES.map((l) => l.code), resources: RESOURCES });
   langSelect.value = lang;
   applyStaticTexts();
+  if (STATIC_MODE) {
+    try { await Offline.init(); } catch (e) { toast(String(e?.message ?? e)); return; }
+  }
   try {
-    const me = await fetch("/api/me").then((r) => r.json());
+    const me = await api("GET", "/me");
     auth.enabled = me.auth_enabled;
     auth.user = me.user;
   } catch { /* treat as signed out */ }
