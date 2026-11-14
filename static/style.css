@@ -116,8 +116,11 @@ dialog::backdrop { background:#0008; }
 #toast { position:fixed; right:16px; bottom:16px; background:var(--danger); padding:10px 16px; border-radius:6px; z-index:10; }
 #toast.ok { background:#3c8d57; }
 
-.flow-wrap { overflow:auto; max-height:calc(100vh - 260px); border:1px solid var(--line); border-radius:6px; background:var(--panel); }
-table.flow { min-width:0; border-collapse:separate; border-spacing:0; font-size:12px; }
+#tab-flow:not([hidden]) { display:flex; flex-direction:column; height:calc(100vh - 84px); overflow:hidden; }
+#tab-flow .toolbar { flex:none; position:static; margin:0 0 10px; padding:0; border-bottom:0; background:none; }
+#fl-body { flex:1; min-height:0; display:flex; flex-direction:column; }
+.flow-wrap { flex:1; min-height:0; overflow:auto; border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+table.flow { width:100%; min-width:0;  border-collapse:separate; border-spacing:0; font-size:12px; }
 table.flow th, table.flow td { padding:2px 4px; border-bottom:1px solid var(--line); border-right:1px solid var(--line); text-align:center; min-width:34px; }
 table.flow .fl-corner, table.flow .fl-row { position:sticky; left:0; z-index:2; background:var(--panel); text-align:left; white-space:nowrap; min-width:220px; }
 table.flow thead th { position:sticky; top:0; z-index:3; background:var(--panel); }
