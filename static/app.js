@@ -610,7 +610,9 @@ function editBlueprint(bp) {
   if (!db.items.length) return toast(t("bp.itemsFirst"));
   const itemOpts = (sel) => itemsByName().map((i) => `<option value="${i.id}" ${i.id === sel ? "selected" : ""}>${esc(i.name)}</option>`).join("");
   const inputRow = (i) => `<div class="row"><select name="in-item">${itemOpts(i?.item_id)}</select><input type="number" name="in-amt" min="0.0001" step="any" required value="${i ? i.amount : 1}"><button type="button" class="danger rm">✕</button></div>`;
-  const bOpts = `<option value="">${t("bp.noBuilding")}</option>` + db.buildings.map((b) => `<option value="${b.id}" ${b.id === bp?.building_id ? "selected" : ""}>${esc(b.name)}${b.unlocked ? "" : " 🔒"}</option>`).join("");
+  // Blueprints sind nur für Gebäude dieser Kategorien möglich; ein bereits zugewiesenes Gebäude bleibt beim Bearbeiten erhalten
+  const BLUEPRINT_BUILDING_CATEGORIES = ["extraction", "manufacturing", "processing"];
+  const bOpts = `<option value="">${t("bp.noBuilding")}</option>` + db.buildings.filter((b) => b.id === bp?.building_id || BLUEPRINT_BUILDING_CATEGORIES.includes(b.category)).map((b) => `<option value="${b.id}" ${b.id === bp?.building_id ? "selected" : ""}>${esc(b.name)}${b.unlocked ? "" : " 🔒"}</option>`).join("");
   openDialog(t(bp ? "named.editTitle" : "named.addTitle", { what: t("kind.blueprint") }),
     `<label class="field"><span>${t("common.name")}</span><input name="name" required value="${esc(bp?.name)}"></label>
      <label class="field"><span>${t("bp.icon")}</span><input name="icon" value="${esc(bp?.icon)}"></label>
