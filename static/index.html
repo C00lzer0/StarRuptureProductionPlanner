@@ -11,11 +11,12 @@
 <header>
   <h1>🏭 <span data-i18n="app.title">Production Planner</span></h1>
   <nav id="tabs">
-    <button data-tab="planner" class="active"></button>
-    <button data-tab="blueprints"></button>
-    <button data-tab="buildings"></button>
     <button data-tab="items"></button>
-    <button data-tab="flow"></button>    <button data-tab="manual"></button>
+    <button data-tab="buildings"></button>
+    <button data-tab="blueprints"></button>
+    <button data-tab="flow"></button>
+    <button data-tab="planner" class="active"></button>
+    <button data-tab="manual"></button>
   </nav>
   <select id="lang" class="lang" data-i18n-title="lang.label"></select>
   <div id="auth" class="auth"></div>
@@ -26,7 +27,7 @@
   <section id="tab-planner">
     <div class="toolbar">
       <label><span data-i18n="planner.target"></span> <select id="p-target"></select></label>
-      <label><span data-i18n="planner.rate"></span> <input id="p-rate" type="number" min="0.01" step="any" value="60"><button id="p-rate-reset" type="button">↺</button></label>
+      <button id="p-add-target" type="button" data-i18n="planner.addTarget"></button>
       <span class="sep"></span>
       <label><span data-i18n="planner.plan"></span> <select id="p-saved"></select></label>
       <button id="p-load" data-i18n="planner.load"></button>

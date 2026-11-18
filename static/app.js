@@ -17,7 +17,10 @@ const tableHeaderObservers = new WeakMap();
 const auth = { enabled: false, user: null };
 const isAdmin = () => !!auth.user?.is_admin;
 const view = { items: { filter: "", tier: "", sort: "tier-name" }, blueprints: { search: "", status: "", tierFrom: "", tierTo: "" }, flow: { unlockedOnly: true, search: "" } };
-const plan = { id: null, name: "", target: null, rate: 60, choices: {} };
+// targets: [{ item, rate }] – null bis zur ersten Initialisierung in renderPlanner
+const plan = { id: null, name: "", targets: null, choices: {} };
+const isTarget = (id) => !!plan.targets?.some((tg) => tg.item === id);
+const defaultRate = (id) => chosenBlueprint(id, new Set())?.output_amount;
 
 // Statischer Modus (GitHub Pages): kein Backend, siehe offline-api.js
 const STATIC_MODE = !!window.APP_CONFIG?.staticMode;
@@ -99,7 +102,8 @@ function chosenBlueprint(itemId, stack) {
 
 function calculate() {
   const result = { nodes: new Map(), edges: [], order: [], warnings: [] };
-  if (!plan.target || !itemById(plan.target)) return result;
+  const targets = (plan.targets ?? []).filter((tg) => itemById(tg.item));
+  if (!targets.length) return result;
 
   const post = [];
   const visited = new Set();
@@ -117,11 +121,11 @@ function calculate() {
     stack.delete(id);
     post.push(id);
   };
-  visit(plan.target, new Set());
+  for (const tg of targets) visit(tg.item, new Set());
   const order = post.reverse();
 
-  const demand = new Map([[plan.target, plan.rate]]);
-  const depth = new Map([[plan.target, 0]]);
+  const demand = new Map(targets.map((tg) => [tg.item, tg.rate]));
+  const depth = new Map(targets.map((tg) => [tg.item, 0]));
   const edgeMap = new Map();
   for (const id of order) {
     const bp = bpOf.get(id);
@@ -219,7 +223,7 @@ function renderGraph(calc) {
     const b = n.bp && buildingById(n.bp.building_id);
     const options = bpsFor(n.id).length;
     const hasAlternative = options > 1 || (!n.bp && options > 0);
-    const cls = "node" + (n.bp ? "" : " raw") + (n.id === plan.target ? " target" : "") + (hasAlternative ? " alt" : "");
+    const cls = "node" + (n.bp ? "" : " raw") + (isTarget(n.id) ? " target" : "") + (hasAlternative ? " alt" : "");
     const line2 = n.bp ? `${Math.ceil(n.machines - 1e-9)}× ${esc(b?.name ?? t("graph.noBuilding"))} (${fmt(n.machines)})` : t("graph.resource");
     const title = n.bp?.name ?? n.item?.name;
     s += `<g class="${cls}" data-item="${n.id}" transform="translate(${p.x},${p.y})"><title>${esc(t("graph.clickHint"))}</title>
@@ -233,7 +237,8 @@ function renderGraph(calc) {
   }
   svg.innerHTML = s + `</g><g id="p-hl"></g></g>`;
   pFitTitles();
-  if (!pv.fitted || pv.key !== plan.target) { pv.key = plan.target; pFit(); } else pApplyView();
+  const key = plan.targets.map((tg) => tg.item).join(",");
+  if (!pv.fitted || pv.key !== key) { pv.key = key; pFit(); } else pApplyView();
 }
 
 // Zu lange Titel (Blueprint-Namen) auf die verfügbare Breite stauchen; im versteckten Tab nicht messbar
@@ -342,13 +347,16 @@ function renderSummary(calc) {
 function renderPlanner() {
   const opts = (list, sel) => list.map((i) => `<option value="${i.id}" ${i.id === sel ? "selected" : ""}>${esc(i.icon && !isUrl(i.icon) ? i.icon + " " : "")}${esc(i.name)}</option>`).join("");
   const producible = db.items.filter((i) => bpsFor(i.id).length);
-  if (!plan.target || !itemById(plan.target)) plan.target = (producible[0] ?? db.items[0])?.id ?? null;
-  $("#p-target").innerHTML = opts(itemsByName(), plan.target);
-  if (document.activeElement !== $("#p-rate")) $("#p-rate").value = plan.rate;
-  const defaultRate = chosenBlueprint(plan.target, new Set())?.output_amount;
-  const reset = $("#p-rate-reset");
-  reset.disabled = defaultRate == null;
-  reset.title = defaultRate == null ? t("planner.rateResetNone") : t("planner.rateReset", { amount: fmt(defaultRate) });
+  if (!plan.targets) {
+    const first = producible[0] ?? db.items[0];
+    plan.targets = first ? [{ item: first.id, rate: defaultRate(first.id) ?? 60 }] : [];
+  }
+  plan.targets = plan.targets.filter((tg) => itemById(tg.item));
+  const select = $("#p-target");
+  const candidates = itemsByName().filter((i) => bpsFor(i.id).length && !isTarget(i.id));
+  const prev = Number(select.value);
+  select.innerHTML = opts(candidates, candidates.some((i) => i.id === prev) ? prev : null);
+  select.disabled = $("#p-add-target").disabled = !candidates.length;
   $("#p-name").value = plan.name;
   $("#p-saved").innerHTML = `<option value="">–</option>` + db.plans.map((p) => `<option value="${p.id}" ${p.id === plan.id ? "selected" : ""}>${esc(p.name)}</option>`).join("");
   const calc = calculate();
@@ -359,14 +367,59 @@ function renderPlanner() {
 
 function chooseBlueprint(itemId) {
   const list = bpsFor(itemId);
+  const target = plan.targets.find((tg) => tg.item === itemId);
+  if (!list.length && !target) return toast(t("bp.none", { name: itemById(itemId)?.name }));
   const cur = chosenBlueprint(itemId, new Set())?.id ?? 0;
-  if (!list.length) return toast(t("bp.none", { name: itemById(itemId)?.name }));
-  const radios = [...allBpsFor(itemId).map((b) => ({ v: b.id, disabled: !b.unlocked, label: `${b.name} (${t("graph.perMin", { amount: fmt(b.output_amount) })}${buildingById(b.building_id) ? ", " + buildingById(b.building_id).name : ""})${b.unlocked ? "" : " – " + t("bp.locked")}` })), { v: 0, label: t("bp.asResource") }]
-    .map((r) => `<label class="choice"><input type="radio" name="bp" value="${r.v}" ${r.disabled ? "disabled" : ""} ${r.v === cur ? "checked" : ""}> ${esc(r.label)}</label>`).join("");
-  openDialog(t("bp.chooseTitle", { name: itemById(itemId)?.name }), radios, (f) => {
-    plan.choices[itemId] = Number(new FormData(f).get("bp"));
+  const radios = list.length ? [...allBpsFor(itemId).map((b) => ({ v: b.id, disabled: !b.unlocked, label: `${b.name} (${t("graph.perMin", { amount: fmt(b.output_amount) })}${buildingById(b.building_id) ? ", " + buildingById(b.building_id).name : ""})${b.unlocked ? "" : " – " + t("bp.locked")}` })), { v: 0, label: t("bp.asResource") }]
+    .map((r) => `<label class="choice"><input type="radio" name="bp" value="${r.v}" ${r.disabled ? "disabled" : ""} ${r.v === cur ? "checked" : ""}> ${esc(r.label)}</label>`).join("") : "";
+  const targetBody = target
+    ? `<div class="toolbar"><label>${t("planner.rate")} <input name="rate" type="number" min="0.01" step="any" value="${target.rate}"><button type="button" id="dlg-rate-reset">↺</button></label>
+        <button type="button" id="dlg-remove-target" class="danger">${t("planner.removeTarget")}</button></div>`
+    : `<div class="toolbar"><button type="button" id="dlg-make-target">${t("planner.makeTarget")}</button></div>`;
+  const applyChoice = (f) => {
+    const bp = new FormData(f).get("bp");
+    if (bp != null) plan.choices[itemId] = Number(bp);
+  };
+  openDialog(t("bp.chooseTitle", { name: itemById(itemId)?.name }), radios + targetBody, (f) => {
+    if (target) {
+      const rate = Number(new FormData(f).get("rate"));
+      if (!(rate > 0)) { toast(t("planner.rateInvalid")); return false; }
+      target.rate = rate;
+    }
+    applyChoice(f);
     renderPlanner();
   });
+  const form = $("#dlg-form"), dlg = $("#dlg");
+  // Standardmenge richtet sich nach dem im Dialog aktuell gewählten Blueprint
+  const selectedDefault = () => {
+    const v = Number(new FormData(form).get("bp") ?? cur);
+    return allBpsFor(itemId).find((b) => b.id === v)?.output_amount;
+  };
+  const reset = $("#dlg-rate-reset");
+  if (reset) {
+    const syncReset = () => {
+      const amount = selectedDefault();
+      reset.disabled = amount == null;
+      reset.title = amount == null ? t("planner.rateResetNone") : t("planner.rateReset", { amount: fmt(amount) });
+    };
+    form.querySelectorAll('input[name="bp"]').forEach((r) => r.addEventListener("change", syncReset));
+    reset.onclick = () => { form.elements.rate.value = selectedDefault(); };
+    syncReset();
+  }
+  const remove = $("#dlg-remove-target");
+  if (remove) remove.onclick = () => {
+    applyChoice(form);
+    plan.targets = plan.targets.filter((tg) => tg.item !== itemId);
+    dlg.close();
+    renderPlanner();
+  };
+  const make = $("#dlg-make-target");
+  if (make) make.onclick = () => {
+    applyChoice(form);
+    plan.targets.push({ item: itemId, rate: defaultRate(itemId) ?? 60 });
+    dlg.close();
+    renderPlanner();
+  };
 }
 
 // ---------- dialog helper ----------
@@ -588,7 +641,7 @@ function editBlueprint(bp) {
 
 // ---------- plan save / load ----------
 
-const planData = () => JSON.stringify({ target: plan.target, rate: plan.rate, choices: plan.choices });
+const planData = () => JSON.stringify({ targets: plan.targets, choices: plan.choices });
 
 async function savePlan(asNew) {
   const name = $("#p-name").value.trim();
@@ -606,7 +659,9 @@ function loadPlan() {
   const p = db.plans.find((x) => x.id === Number($("#p-saved").value));
   if (!p) return;
   const d = JSON.parse(p.data);
-  Object.assign(plan, { id: p.id, name: p.name, target: d.target, rate: d.rate, choices: d.choices ?? {} });
+  // Ältere Pläne speichern genau ein Ziel (target/rate)
+  const targets = Array.isArray(d.targets) ? d.targets : d.target ? [{ item: d.target, rate: d.rate }] : [];
+  Object.assign(plan, { id: p.id, name: p.name, targets: targets.filter((tg) => tg.item && tg.rate > 0).map((tg) => ({ item: Number(tg.item), rate: Number(tg.rate) })), choices: d.choices ?? {} });
   renderPlanner();
 }
 
@@ -797,13 +852,12 @@ document.querySelectorAll(".seg button").forEach((b) => (b.onclick = () => {
   pFitTitles();
 }));
 pInit();
-$("#p-target").onchange = (e) => { plan.target = Number(e.target.value); renderPlanner(); };
-$("#p-rate-reset").onclick = () => {
-  const amount = chosenBlueprint(plan.target, new Set())?.output_amount;
-  if (amount > 0) { plan.rate = amount; renderPlanner(); }
-};
-$("#p-rate").oninput = (e) => { const v = Number(e.target.value); if (v > 0) { plan.rate = v; renderPlanner(); } };
-$("#p-load").onclick = loadPlan;
+$("#p-add-target").onclick = () => {
+  const id = Number($("#p-target").value);
+  if (!id || isTarget(id)) return;
+  plan.targets.push({ item: id, rate: defaultRate(id) ?? 60 });
+  renderPlanner();
+};$("#p-load").onclick = loadPlan;
 $("#p-save").onclick = () => savePlan(false);
 $("#p-saveas").onclick = () => savePlan(true);
 $("#p-del").onclick = async () => {

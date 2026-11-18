@@ -12,7 +12,7 @@
 
 ### Funktionen
 
-- **Planer**: Zielitem und Rate wählen, Produktionsbaum als Graph oder als Zusammenfassung anzeigen. Pro Node kann ein alternativer Blueprint gewählt werden.
+- **Planer**: Beliebig viele Zielitems hinzufügen; die Menge jedes Ziels lässt sich per Klick auf die Node anpassen oder auf den Standardwert des gewählten Blueprints zurücksetzen. Produktionsbaum als Graph oder als Zusammenfassung anzeigen. Pro Node kann ein alternativer Blueprint gewählt werden.
 - **Materialfluss**: Matrix aller Blueprints (Zeilen = produziertes Item, Spalten = benötigte Inputs, nach Produktionsstufe sortiert). Zeigt, von welcher bis zu welcher Stufe ein Input-Item benötigt wird, um Überlastungen des Transportnetzwerks zu erkennen.
 - **Pläne speichern**: Pläne benennen, speichern, laden und löschen.
 - **Blueprints, Gebäude, Items**: Verwaltung (anlegen, bearbeiten, löschen) inklusive Icons, Tier, Energie (negativ = Verbrauch, positiv = Erzeugung), Temperatur, Baufläche, Kategorie und Freischalt-Status. Beim Entsperren eines Gebäudes wird nachgefragt, ob auch dessen Blueprints entsperrt werden sollen; Blueprints lassen sich zusätzlich per Tier bzw. Tier-Bereich gesammelt sperren/entsperren.
@@ -89,7 +89,7 @@ Einrichtung: In den Repository-Einstellungen unter *Pages* als Quelle „GitHub 
 
 ### Features
 
-- **Planner**: choose a target item and rate, and view the production tree as a graph or a summary. An alternative blueprint can be selected per node.
+- **Planner**: add any number of target items; click a node to change a target's amount or reset it to the default of the selected blueprint. View the production tree as a graph or a summary. An alternative blueprint can be selected per node.
 - **Material flow**: matrix of all blueprints (rows = produced item, columns = required inputs, sorted by production stage) showing from which stage to which stage an input item is needed, to spot transport network overload.
 - **Saved plans**: name, save, load and delete plans.
 - **Blueprints, buildings, items**: manage (create, edit, delete) including icons, tier, power (negative = consumption, positive = generation), temperature, build area, category and unlock status. Unlocking a building asks whether its blueprints should be unlocked as well; blueprints can also be locked/unlocked in bulk by tier or tier range.
