@@ -26,7 +26,9 @@ const Offline = (() => {
       build_area TEXT NULL,
       build_area2 TEXT NULL,
       category TEXT NULL,
-      unlocked INTEGER NOT NULL DEFAULT 1
+      unlocked INTEGER NOT NULL DEFAULT 1,
+      throughput REAL NULL,
+      ports TEXT NULL
     );
     CREATE TABLE blueprints (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,7 +188,7 @@ const Offline = (() => {
 
   const buildingsList = () =>
     all(
-      `SELECT b.id, b.name, b.icon, b.power, b.temperature, b.build_area, b.build_area2, b.category,
+      `SELECT b.id, b.name, b.icon, b.power, b.temperature, b.build_area, b.build_area2, b.category, b.throughput, b.ports,
               COALESCE(u.unlocked, b.unlocked) AS unlocked
        FROM buildings b
        LEFT JOIN user_building_unlocks u ON u.building_id = b.id AND u.user_id = ?

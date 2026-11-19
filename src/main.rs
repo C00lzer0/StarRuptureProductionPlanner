@@ -63,8 +63,27 @@ struct Building {
     build_area2: Option<String>,
     #[serde(default)]
     category: Option<String>,
+    // Transport buildings only: item throughput per minute and connections per side as JSON (see PortCounts)
+    #[serde(default)]
+    throughput: Option<f64>,
+    #[serde(default)]
+    ports: Option<String>,
     #[serde(default = "default_unlocked")]
     unlocked: bool,
+}
+
+// Number of item connections on each side of a building (rotation 0)
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PortCounts {
+    #[serde(default)]
+    top: u8,
+    #[serde(default)]
+    right: u8,
+    #[serde(default)]
+    bottom: u8,
+    #[serde(default)]
+    left: u8,
 }
 
 #[derive(Serialize, Deserialize, FromRow)]
@@ -186,6 +205,7 @@ async fn buildings_list(
     // Der Freischalt-Status ist pro Benutzer überschreibbar (Standardwert aus den Stammdaten)
     sqlx::query_as::<_, Building>(
         "SELECT b.id, b.name, b.icon, b.power, b.temperature, b.build_area, b.build_area2, b.category,
+                b.throughput, b.ports,
                 COALESCE(u.unlocked, b.unlocked) AS unlocked
          FROM buildings b
          LEFT JOIN user_building_unlocks u ON u.building_id = b.id AND u.user_id = ?
@@ -204,7 +224,7 @@ async fn buildings_create(
 ) -> ApiResult<Building> {
     validate_building(&b)?;
     let r = sqlx::query(
-        "INSERT INTO buildings (name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO buildings (name, icon, power, temperature, build_area, build_area2, category, throughput, ports, unlocked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&b.name)
     .bind(&b.icon)
@@ -213,6 +233,8 @@ async fn buildings_create(
     .bind(&b.build_area)
     .bind(&b.build_area2)
     .bind(&b.category)
+    .bind(b.throughput)
+    .bind(&b.ports)
     .bind(b.unlocked)
     .execute(&s.pool)
     .await
@@ -238,7 +260,7 @@ async fn buildings_update(
     validate_building(&b)?;
     let mut tx = s.pool.begin().await.map_err(err)?;
     sqlx::query(
-        "UPDATE buildings SET name = ?, icon = ?, power = ?, temperature = ?, build_area = ?, build_area2 = ?, category = ?, unlocked = ? WHERE id = ?",
+        "UPDATE buildings SET name = ?, icon = ?, power = ?, temperature = ?, build_area = ?, build_area2 = ?, category = ?, throughput = ?, ports = ?, unlocked = ? WHERE id = ?",
     )
     .bind(&b.name)
     .bind(&b.icon)
@@ -247,6 +269,8 @@ async fn buildings_update(
     .bind(&b.build_area)
     .bind(&b.build_area2)
     .bind(&b.category)
+    .bind(b.throughput)
+    .bind(&b.ports)
     .bind(b.unlocked)
     .bind(id)
     .execute(&mut *tx)
@@ -293,8 +317,19 @@ fn validate_building(b: &Building) -> Result<(), ApiError> {
     {
         return Err((StatusCode::BAD_REQUEST, "Unknown building category".into()));
     }
+    if b.throughput.is_some_and(|t| !t.is_finite() || t <= 0.0) {
+        return Err((StatusCode::BAD_REQUEST, "Invalid throughput".into()));
+    }
+    if let Some(ports) = &b.ports {
+        let valid = serde_json::from_str::<PortCounts>(ports)
+            .is_ok_and(|p| [p.top, p.right, p.bottom, p.left].iter().all(|&n| n <= MAX_PORTS_PER_SIDE));
+        if !valid {
+            return Err((StatusCode::BAD_REQUEST, "Invalid ports".into()));
+        }
+    }
     Ok(())
 }
+const MAX_PORTS_PER_SIDE: u8 = 16;
 const BUILDING_CATEGORIES: [&str; 6] = [
     "extraction",
     "manufacturing",
@@ -850,6 +885,18 @@ const IMAGE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/images");
 // Basisdaten (Items, Gebäude, Blueprints) für neu erstellte Datenbanken
 const SEED_SQL: &str = include_str!("../seed.sql");
 
+// Standardwerte der Transportgebäude für bestehende Datenbanken (entsprechen dem Ende des Gebäude-Abschnitts in seed.sql)
+const TRANSPORT_DEFAULTS: [(&str, Option<f64>, Option<&str>); 8] = [
+    ("Rail v1", Some(120.0), None),
+    ("Rail v2", Some(240.0), None),
+    ("Rail v3", Some(480.0), None),
+    ("Rail Connector", None, Some(r#"{"top":1,"right":1,"bottom":1,"left":1}"#)),
+    ("Rail Modulator 3", None, Some(r#"{"top":1,"bottom":3}"#)),
+    ("Rail Modulator 5", None, Some(r#"{"top":1,"bottom":5}"#)),
+    ("Rail Support", None, Some(r#"{"left":1,"right":1}"#)),
+    ("Drone Roundabout", None, Some(r#"{"top":2,"right":2,"bottom":2,"left":2}"#)),
+];
+
 const SCHEMA: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -866,7 +913,9 @@ const SCHEMA: &[&str] = &[
         build_area TEXT NULL,
         build_area2 TEXT NULL,
         category TEXT NULL,
-        unlocked INTEGER NOT NULL DEFAULT 1
+        unlocked INTEGER NOT NULL DEFAULT 1,
+        throughput REAL NULL,
+        ports TEXT NULL
     )",
     "CREATE TABLE IF NOT EXISTS blueprints (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -977,6 +1026,14 @@ async fn main() {
             .await
             .expect("Migration building unlocked");
     }
+    for (col, ty) in [("throughput", "REAL"), ("ports", "TEXT")] {
+        if !cols.iter().any(|c| c == col) {
+            sqlx::query(&format!("ALTER TABLE buildings ADD COLUMN {col} {ty} NULL"))
+                .execute(&pool)
+                .await
+                .expect("Migration transport settings");
+        }
+    }
     let item_cols: Vec<String> = sqlx::query_scalar("SELECT name FROM pragma_table_info('items')")
         .fetch_all(&pool)
         .await
@@ -1048,6 +1105,28 @@ async fn main() {
                 .expect("Migration Energie vorzeichenbehaftet");
         }
         sqlx::query("PRAGMA user_version = 1")
+            .execute(&mut *tx)
+            .await
+            .expect("Version setzen");
+        tx.commit().await.expect("Migrations-Commit");
+    }
+    // Version 2: Durchsatz und Anschlüsse der Transportgebäude; neue Datenbanken erhalten sie über seed.sql
+    if version < 2 {
+        let mut tx = pool.begin().await.expect("Migrations-Transaktion");
+        if !is_new_db {
+            for (name, throughput, ports) in TRANSPORT_DEFAULTS {
+                sqlx::query(
+                    "UPDATE buildings SET throughput = ?, ports = ? WHERE name = ? AND throughput IS NULL AND ports IS NULL",
+                )
+                .bind(throughput)
+                .bind(ports)
+                .bind(name)
+                .execute(&mut *tx)
+                .await
+                .expect("Migration Transportgebäude");
+            }
+        }
+        sqlx::query("PRAGMA user_version = 2")
             .execute(&mut *tx)
             .await
             .expect("Version setzen");

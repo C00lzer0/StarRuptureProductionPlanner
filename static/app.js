@@ -10,6 +10,17 @@ const powerHtml = (p) => {
 };
 const isUrl = (s) => /^(https?:|data:image\/|images\/|\/)/.test(s || "");
 const BUILDING_CATEGORIES = ["extraction", "manufacturing", "processing", "transport", "defense", "power"];
+const TRANSPORT_THROUGHPUTS = [120, 240, 480];
+const PORT_SIDES = ["top", "right", "bottom", "left"];
+const PORT_ARROWS = { top: "↑", right: "→", bottom: "↓", left: "←" };
+// Anschlüsse eines Transportgebäudes: Anzahl je Seite (Rotation 0); null, wenn keine definiert sind
+const parsePorts = (json) => {
+  try {
+    const o = JSON.parse(json || "null");
+    const counts = Object.fromEntries(PORT_SIDES.map((s) => [s, Math.max(0, Math.floor(Number(o?.[s]) || 0))]));
+    return PORT_SIDES.some((s) => counts[s]) ? counts : null;
+  } catch { return null; }
+};
 
 const db = { items: [], buildings: [], blueprints: [], plans: [], manualPlans: [] };
 const tableHeaderObservers = new WeakMap();
@@ -450,6 +461,12 @@ function stickTableHeader(host) {
   updateOffset();
 }
 
+function transportInfo(b) {
+  const ports = parsePorts(b.ports);
+  const parts = [b.throughput != null ? t("graph.perMin", { amount: fmt(b.throughput) }) : "", ports ? PORT_SIDES.filter((s) => ports[s]).map((s) => `${PORT_ARROWS[s]}${ports[s]}`).join(" ") : ""].filter(Boolean);
+  return parts.length ? ` <small class="muted">${esc(parts.join(" · "))}</small>` : "";
+}
+
 function renderNamed(kind) {
   const host = $("#tab-" + kind);
   const isB = kind === "buildings";
@@ -470,7 +487,7 @@ function renderNamed(kind) {
       list = list.filter((n) => (!filter || n.name.toLocaleLowerCase().includes(filter)) && (!tier || String(n.tier) === tier));
       list.sort((a, b) => sort === "name" ? a.name.localeCompare(b.name) : sort === "tier" ? a.tier - b.tier : a.tier - b.tier || a.name.localeCompare(b.name));
     }
-    $("#"+kind+"-rows").innerHTML = list.map((n) => `<tr${isB ? ` class="${n.unlocked ? "bp-unlocked" : "bp-locked"}"` : ""}><td>${iconHtml(n.icon, n.name, kind)}</td><td>${esc(n.name)}</td>${isB ? `<td>${n.category ? esc(t("category." + n.category)) : "–"}</td><td class="status">${n.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${powerHtml(n.power)}</td><td class="num">${n.temperature == null ? "–" : fmt(n.temperature)}</td><td class="num">${[n.build_area, n.build_area2].filter(Boolean).map(esc).join(" / ") || "–"}</td>` : `<td class="num">${n.tier}</td>`}    <td>${isB && auth.user ? `<button data-toggle="${n.id}">${t(n.unlocked ? "bp.lock" : "bp.unlock")}</button> ` : ""}${isAdmin() ? `<button data-edit="${n.id}">${t("common.edit")}</button> <button class="danger" data-del="${n.id}">${t("common.delete")}</button>` : ""}</td></tr>`).join("");
+    $("#"+kind+"-rows").innerHTML = list.map((n) => `<tr${isB ? ` class="${n.unlocked ? "bp-unlocked" : "bp-locked"}"` : ""}><td>${iconHtml(n.icon, n.name, kind)}</td><td>${esc(n.name)}</td>${isB ? `<td>${n.category ? esc(t("category." + n.category)) : "–"}${isB && n.category === "transport" ? transportInfo(n) : ""}</td><td class="status">${n.unlocked ? t("bp.unlocked") : t("bp.locked")}</td><td class="num">${powerHtml(n.power)}</td><td class="num">${n.temperature == null ? "–" : fmt(n.temperature)}</td><td class="num">${[n.build_area, n.build_area2].filter(Boolean).map(esc).join(" / ") || "–"}</td>` : `<td class="num">${n.tier}</td>`}    <td>${isB && auth.user ? `<button data-toggle="${n.id}">${t(n.unlocked ? "bp.lock" : "bp.unlock")}</button> ` : ""}${isAdmin() ? `<button data-edit="${n.id}">${t("common.edit")}</button> <button class="danger" data-del="${n.id}">${t("common.delete")}</button>` : ""}</td></tr>`).join("");
     $("#"+kind+"-rows").querySelectorAll("[data-toggle]").forEach((b) => (b.onclick = async () => {
       const n = db.buildings.find((x) => x.id === Number(b.dataset.toggle));
       const body = { unlocked: !n.unlocked };
@@ -484,7 +501,13 @@ function renderNamed(kind) {
     $("#"+kind+"-rows").querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => edit(db[kind].find((n) => n.id === Number(b.dataset.edit)))));
     $("#"+kind+"-rows").querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { const n = db[kind].find((x) => x.id === Number(b.dataset.del)); if (!confirm(t("common.deleteConfirm", { name: n.name }))) return; await api("DELETE", `/${kind}/${n.id}`); await loadAll(); }));
   };
-  const edit = (n) => openDialog(t(n ? "named.editTitle" : "named.addTitle", { what }),
+  const edit = (n) => {
+    const ports = parsePorts(n?.ports);
+    const throughputs = [...new Set([...TRANSPORT_THROUGHPUTS, ...(n?.throughput != null ? [n.throughput] : [])])].sort((a, b) => a - b);
+    const transport = `<div id="b-transport" ${n?.category === "transport" ? "" : "hidden"}>
+      <label class="field"><span>${t("named.throughput")}</span><select name="throughput"><option value="">–</option>${throughputs.map((v) => `<option value="${v}" ${n?.throughput === v ? "selected" : ""}>${fmt(v)}</option>`).join("")}</select></label>
+      <div class="field"><span>${t("named.ports")}</span><div class="row ports">${PORT_SIDES.map((s) => `<label>${PORT_ARROWS[s]} ${t("port." + s)} <input type="number" name="port-${s}" min="0" max="16" step="1" value="${ports?.[s] ?? 0}"></label>`).join("")}</div></div></div>`;
+    openDialog(t(n ? "named.editTitle" : "named.addTitle", { what }),
     `<label class="field"><span>${t("common.name")}</span><input name="name" required value="${esc(n?.name)}"></label>
      <label class="field"><span>${t("named.icon")}</span><input name="icon" value="${esc(n?.icon)}"></label>` +
     (!isB ? `<label class="field"><span>${t("item.tier")}</span><input type="number" name="tier" min="0" step="1" value="${n?.tier ?? 0}"></label>` : "") +
@@ -493,7 +516,7 @@ function renderNamed(kind) {
      <label class="field"><span>${t("named.power")}</span><input type="number" name="power" step="any" value="${n?.power ?? 0}"></label>
      <label class="field"><span>${t("named.temperature")}</span><input type="number" name="temperature" step="any" value="${n?.temperature ?? ""}"></label>
      <label class="field"><span>${t("named.buildArea")}</span>     <input name="build_area" pattern="\s*[1-9][0-9]*\s*\*\s*[1-9][0-9]*\s*" placeholder="4*4" value="${esc(n?.build_area)}"></label>
-          <label class="field"><span>${t("named.buildArea2")}</span><input name="build_area2" pattern="\s*[1-9][0-9]*\s*\*\s*[1-9][0-9]*\s*" placeholder="4*4" value="${esc(n?.build_area2)}"></label>` : ""),
+          <label class="field"><span>${t("named.buildArea2")}</span><input name="build_area2" pattern="\s*[1-9][0-9]*\s*\*\s*[1-9][0-9]*\s*" placeholder="4*4" value="${esc(n?.build_area2)}"></label>${transport}` : ""),
     async (f) => {
       const d = Object.fromEntries(new FormData(f));
       const body = { name: d.name.trim(), icon: d.icon.trim() };
@@ -505,6 +528,10 @@ function renderNamed(kind) {
         body.temperature = d.temperature === "" ? null : Number(d.temperature);
         body.build_area = d.build_area.replace(/\s+/g, "") || null;
         body.build_area2 = d.build_area2.replace(/\s+/g, "") || null;
+        const isTransport = body.category === "transport";
+        const counts = Object.fromEntries(PORT_SIDES.map((s) => [s, Math.min(16, Math.max(0, Math.floor(Number(d["port-" + s]) || 0)))]));
+        body.throughput = isTransport && d.throughput !== "" ? Number(d.throughput) : null;
+        body.ports = isTransport && PORT_SIDES.some((s) => counts[s]) ? JSON.stringify(Object.fromEntries(PORT_SIDES.filter((s) => counts[s]).map((s) => [s, counts[s]]))) : null;
       }
       let query = "";
       if (isB && n && !n.unlocked && body.unlocked) {
@@ -514,6 +541,9 @@ function renderNamed(kind) {
       if (n) await api("PUT", `/${kind}/${n.id}${query}`, body); else await api("POST", `/${kind}`, body);
       await loadAll();
     });
+    const category = $("#dlg-form select[name=category]");
+    if (category) category.onchange = () => { $("#b-transport").hidden = category.value !== "transport"; };
+  };
   if (isAdmin()) $("#add-" + kind).onclick = () => edit(null);
   if (!isB) { $("#item-filter").oninput = renderRows; $("#item-tier").onchange = renderRows; $("#item-sort").onchange = renderRows; }
   renderRows();

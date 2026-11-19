@@ -95,6 +95,23 @@ function mpPorts(n) {
 }
 const mpPort = (nodeId, kind, idx) => { const n = mpNode(nodeId); return n && mpPorts(n).find((p) => p.kind === kind && p.idx === idx); };
 
+// Anschlüsse von Transportgebäuden (für beliebige Items): Anzahl je Seite laut Gebäude, gleichmäßig verteilt; nur Anzeige, noch nicht verbindbar
+function mpFreePorts(n) {
+  const counts = parsePorts(buildingById(n.bid)?.ports);
+  if (!counts) return [];
+  const ports = [];
+  for (const side of PORT_SIDES) {
+    for (let i = 0; i < counts[side]; i++) {
+      const f = (i + 0.5) / counts[side];
+      const [lx, ly, vx, vy] = { top: [f * n.w, 0, 0, 1], bottom: [f * n.w, n.h, 0, -1], left: [0, f * n.h, 1, 0], right: [n.w, f * n.h, -1, 0] }[side];
+      const [px, py] = rotPoint(n.rot, lx, ly, n.w, n.h);
+      const [nx, ny] = rotVec(n.rot, vx, vy);
+      ports.push({ x: n.x + px, y: n.y + py, nx, ny });
+    }
+  }
+  return ports;
+}
+
 function mpOverlaps(n, ignoreId) {
   const [w, h] = mpDims(n);
   return mp.nodes.some((o) => {
@@ -134,7 +151,9 @@ function mpNodeSvg(n, ghost, bad) {
   const bp = db.blueprints.find((q) => q.id === n.bp);
   const sel = mp.sel?.type === "n" && mp.sel.id === n.id;
   const maxChars = Math.max(4, Math.floor(px / 6));
-  const name = bp ? (bp.name.length > maxChars ? bp.name.slice(0, maxChars - 1) + "…" : bp.name) : "?";
+  const throughput = b?.throughput != null ? t("graph.perMin", { amount: fmt(b.throughput) }) : "";
+  const baseName = bp?.name ?? b?.name ?? "?";
+  const name = !bp && throughput ? throughput : baseName.length > maxChars ? baseName.slice(0, maxChars - 1) + "…" : baseName;
   // Der Bereich zwischen den Port-Symbolen (oben Eingänge, unten Ausgang) wird für Symbol und Namen genutzt
   const PORT_MARGIN = 36, PAD = 8, LABEL_H = 16;
   const areaH = Math.max(0, py - 2 * PORT_MARGIN);
@@ -142,7 +161,7 @@ function mpNodeSvg(n, ghost, bad) {
   const blockH = iconSize + LABEL_H;
   const iconY = y + py / 2 - blockH / 2;
   let s = `<g class="mnode${sel ? " sel" : ""}${ghost ? " ghost" : ""}${bad ? " bad" : ""}" data-node="${n.id}">
-    <title>${esc(b?.name)} (${n.w}*${n.h})</title>
+    <title>${esc(b?.name)} (${n.w}*${n.h})${throughput ? " · " + esc(throughput) : ""}</title>
     <rect x="${x}" y="${y}" width="${px}" height="${py}" rx="4"/>
     ${iconSvg(b?.icon, b?.name, x + px / 2 - iconSize / 2, iconY, iconSize, "buildings")}
     <text x="${x + px / 2}" y="${iconY + iconSize + 12}" text-anchor="middle" class="mlabel">${esc(name)}</text>`;
@@ -153,6 +172,9 @@ function mpNodeSvg(n, ghost, bad) {
     s += `<g class="mport ${p.kind}" data-port="${p.node}:${p.kind}:${p.idx}"><title>${esc(title)}</title>
       <circle cx="${cx}" cy="${cy}" r="8"/>
       ${iconSvg(it?.icon, it?.name, cx + p.nx * 18 - 10, cy + p.ny * 18 - 10, 20)}</g>`;
+  }
+  for (const p of mpFreePorts(n)) {
+    s += `<g class="mport free"><title>${esc(t("manual.anyItem"))}</title><circle cx="${p.x * CELL}" cy="${p.y * CELL}" r="6"/></g>`;
   }
   return s + "</g>";
 }

@@ -80,6 +80,7 @@ dialog::backdrop { background:#0008; }
 .field > span { color:var(--muted); }
 .row { display:flex; gap:6px; margin-bottom:6px; align-items:center; }
 .row select { flex:1; } .row input[type=number] { width:100px; }
+.row.ports { flex-wrap:wrap; } .row.ports label { display:flex; gap:4px; align-items:center; color:var(--muted); } .row.ports input[type=number] { width:56px; }
 .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
 .choice { display:block; padding:4px 0; }
 #tab-manual:not([hidden]) { display:flex; gap:12px; height:calc(100vh - 84px); overflow:hidden; }
@@ -109,6 +110,7 @@ dialog::backdrop { background:#0008; }
 .mport.in circle { fill:#4aa3df; }
 .mport.out circle { fill:#6fcf8f; }
 .mport:hover circle { stroke:var(--accent); }
+.mport.free { cursor:default; } .mport.free circle { fill:#f5a623; }
 .mlink { fill:none; stroke:#8fb8de; stroke-width:3; pointer-events:none; }
 .mlink.sel { stroke:var(--accent); }
 .mlink.pending { stroke-dasharray:6 4; }

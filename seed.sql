@@ -168,6 +168,16 @@ INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_are
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (39, 'Rail v2', '', 0.0, NULL, '1*1', NULL, 'transport', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (40, 'Rail v3', '', 0.0, NULL, '1*1', NULL, 'transport', 1);
 
+-- Transport buildings: throughput (items/min) and connections per side (JSON)
+UPDATE buildings SET throughput = 120 WHERE name = 'Rail v1';
+UPDATE buildings SET throughput = 240 WHERE name = 'Rail v2';
+UPDATE buildings SET throughput = 480 WHERE name = 'Rail v3';
+UPDATE buildings SET ports = '{"top":1,"right":1,"bottom":1,"left":1}' WHERE name = 'Rail Connector';
+UPDATE buildings SET ports = '{"top":1,"bottom":3}' WHERE name = 'Rail Modulator 3';
+UPDATE buildings SET ports = '{"top":1,"bottom":5}' WHERE name = 'Rail Modulator 5';
+UPDATE buildings SET ports = '{"left":1,"right":1}' WHERE name = 'Rail Support';
+UPDATE buildings SET ports = '{"top":2,"right":2,"bottom":2,"left":2}' WHERE name = 'Drone Roundabout';
+
 -- blueprints
 INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (1, 'Titanium Ore (impure)', '', 1, 1, 60.0, 1);
 INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (2, 'Titanium Ore (normal)', '', 1, 1, 120.0, 1);
