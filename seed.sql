@@ -141,12 +141,12 @@ INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_are
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (10, 'Compounder', '', -60.0, 150.0, '5*6', '6*6', 'processing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (11, 'Pyro Forge', '', -200.0, 180.0, '5*6', '6*6', 'processing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (12, 'Furnance v2', '', -50.0, 14.0, '4*5', '5*5', 'processing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (13, 'Compounder v2', '', -180.0, 250.0, '7*7', NULL, 'processing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (13, 'Compounder v2', '', -180.0, 250.0, '7*7', '8*7', 'processing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (14, 'Fabricator', '', -10.0, 5.0, '3*3', '4*3', 'manufacturing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (15, 'Assembler', '', -60.0, 150.0, '3*6', '4*6', 'manufacturing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (16, 'Constructorizer', '', -700.0, 500.0, '4*6', '5*6', 'manufacturing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (17, 'Fabricator v2', '', -25.0, 8.0, '4*4', '5*4', 'manufacturing', 1);
-INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (18, 'Constructorizer v2', '', -700.0, 500.0, NULL, NULL, 'manufacturing', 1);
+INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (18, 'Constructorizer v2', '', -700.0, 500.0, '7*7', '8*7', 'manufacturing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (19, 'Facturer', '', -850.0, 650.0, '4*6', '5*6', 'manufacturing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (20, 'Pressurizer', '', -40.0, 60.0, '5*5', '6*5', 'processing', 1);
 INSERT INTO buildings (id, name, icon, power, temperature, build_area, build_area2, category, unlocked) VALUES (21, 'Refinery', '', -150.0, 100.0, '6*6', '7*6', 'processing', 1);
@@ -330,6 +330,10 @@ INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amou
 INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (148, 'Biofilament', '', 19, 97, 3.75, 1);
 INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (149, 'Rocket Engine', '', 19, 82, 3.75, 1);
 INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (150, 'RTSC Generator', '', 19, 113, 3.0, 1);
+INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (151, 'Synthetic DNA', '', 19, 105, 3.0, 1);
+INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (152, 'Dome', '', 19, 73, 3.0, 1);
+INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (153, 'Ion Bomb', '', 19, 108, 3.0, 1);
+INSERT INTO blueprints (id, name, icon, building_id, output_item_id, output_amount, unlocked) VALUES (154, 'Satellite Body', '', 19, 93, 2.0, 1);
 
 -- blueprint_inputs
 INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (23, 1, 60.0);
@@ -672,3 +676,23 @@ INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (150, 64, 3.
 INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (150, 86, 6.0);
 INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (150, 92, 3.0);
 INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (150, 100, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (151, 67, 9.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (151, 84, 6.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (151, 85, 12.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (151, 89, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (151, 97, 6.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (152, 72, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (152, 94, 9.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (152, 95, 6.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (152, 96, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (152, 107, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (153, 52, 6.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (153, 63, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (153, 74, 9.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (153, 75, 6.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (153, 114, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (154, 70, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (154, 76, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (154, 82, 3.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (154, 90, 9.0);
+INSERT INTO blueprint_inputs (blueprint_id, item_id, amount) VALUES (154, 101, 9.0);
